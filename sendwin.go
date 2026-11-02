@@ -1,0 +1,573 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"net"
+	"net/netip"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"my-app/internal/core"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+)
+
+// sendWin is a Send Message window: the main window, or one opened to
+// reply. Its fields are used on the main thread only.
+type sendWin struct {
+	a      *tcpApp
+	win    *mygo.Window
+	isMain bool
+	closed bool
+
+	list   ui.ListState
+	chosen ui.Selection[string] // user IDs
+	extra  []core.User          // recipients preselected but not among the peers
+	users  []core.User          // the rows of the last frame, sorted
+
+	text   string
+	seal   bool
+	lock   bool
+	attach []core.Attachment
+
+	// A failed delivery, offered for a retry.
+	failOpen bool
+	failMsg  core.Message
+	failTo   []core.User
+	failErr  string
+}
+
+// pendingSend is a sent message whose deliveries have not all reported.
+type pendingSend struct {
+	msg  core.Message
+	from *sendWin
+	left int
+}
+
+// deliveryFailure is the outcome of a delivery reported before Send
+// returned its ID: err is nil when it was delivered.
+type deliveryFailure struct {
+	to  core.User
+	err error
+}
+
+// openSendWindow opens a Send Message window with the users of to chosen
+// and text in its message field. The first one opened is the main window.
+func openSendWindow(a *tcpApp, to []core.User, text string) *sendWin {
+	sw := newSendWin(a, to, text)
+	if a.mainSend == nil {
+		sw.isMain = true
+		a.mainSend = sw
+	}
+	opts := mygo.WindowOptions{
+		Title:     "Send Message",
+		Width:     460,
+		Height:    430,
+		MinWidth:  360,
+		MinHeight: 320,
+		Content:   ui.View(sw.view),
+	}
+	if sw.isMain {
+		opts.StateKey = "main"
+	}
+	sw.win = a.desk.newWindow(opts)
+	a.sendWins = append(a.sendWins, sw)
+	if sw.win != nil {
+		if sw.isMain {
+			a.main = sw.win
+			// The main window hides to the tray rather than closing, so
+			// the app keeps receiving.
+			sw.win.OnClose(func(e *mygo.CloseEvent) {
+				if !a.quitting && a.tray != nil {
+					e.PreventDefault()
+					sw.win.Hide()
+				}
+			})
+		}
+		sw.win.OnClosed(sw.onClosed)
+		sw.win.Focus()
+	}
+	return sw
+}
+
+func newSendWin(a *tcpApp, to []core.User, text string) *sendWin {
+	sw := &sendWin{a: a, text: text, seal: a.settings.SealByDefault}
+	for _, u := range to {
+		sw.chosen.Add(u.ID)
+		if !hasUser(a.peers, u.ID) {
+			sw.extra = append(sw.extra, u)
+		}
+	}
+	return sw
+}
+
+func hasUser(us []core.User, id string) bool {
+	for _, u := range us {
+		if u.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// onClosed forgets the window once it closed.
+func (sw *sendWin) onClosed() {
+	sw.closed = true
+	a := sw.a
+	for i, w := range a.sendWins {
+		if w == sw {
+			a.sendWins = append(a.sendWins[:i], a.sendWins[i+1:]...)
+			break
+		}
+	}
+	if a.mainSend == sw {
+		a.mainSend = nil
+		a.main = nil
+	}
+}
+
+// close closes the window, or forgets it when it has none (tests).
+func (sw *sendWin) close() {
+	if sw.win != nil {
+		sw.win.Close()
+		return
+	}
+	sw.onClosed()
+}
+
+// sendListUsers returns the users the list shows: the peers and the
+// preselected recipients, without hidden ones, sorted by o.
+func sendListUsers(peers, extra []core.User, o core.ListOptions) []core.User {
+	us := make([]core.User, 0, len(peers)+len(extra))
+	for _, u := range peers {
+		if u.Priority >= 0 {
+			us = append(us, u)
+		}
+	}
+	for _, u := range extra {
+		if !hasUser(us, u.ID) {
+			us = append(us, u)
+		}
+	}
+	sendSortUsers(us, o)
+	return us
+}
+
+// sendSortUsers sorts the user list as the Sort/Display settings say:
+// higher priority first, then by group when SortByGroup, then by the
+// second key, each optionally reversed, strings optionally ignoring case.
+func sendSortUsers(us []core.User, o core.ListOptions) {
+	str := func(a, b string) int {
+		if o.IgnoreCase {
+			a, b = strings.ToLower(a), strings.ToLower(b)
+		}
+		return strings.Compare(a, b)
+	}
+	sort.SliceStable(us, func(i, j int) bool {
+		a, b := us[i], us[j]
+		if a.Priority != b.Priority {
+			return a.Priority > b.Priority
+		}
+		if o.SortByGroup {
+			if d := str(a.Group, b.Group); d != 0 {
+				if o.GroupReverse {
+					d = -d
+				}
+				return d < 0
+			}
+		}
+		var d int
+		switch o.Second {
+		case core.SortByIP:
+			d = compareIP(userIP(a), userIP(b))
+		case core.SortByHost:
+			d = str(a.Host, b.Host)
+		default:
+			d = str(a.Name, b.Name)
+		}
+		if d == 0 {
+			d = strings.Compare(a.ID, b.ID)
+		}
+		if o.SecondReverse {
+			d = -d
+		}
+		return d < 0
+	})
+}
+
+// userIP is the IP part of a user's address.
+func userIP(u core.User) string {
+	if h, _, err := net.SplitHostPort(u.Addr); err == nil {
+		return h
+	}
+	return u.Addr
+}
+
+// compareIP orders addresses numerically, those that do not parse last.
+func compareIP(a, b string) int {
+	x, errA := netip.ParseAddr(a)
+	y, errB := netip.ParseAddr(b)
+	switch {
+	case errA != nil && errB != nil:
+		return strings.Compare(a, b)
+	case errA != nil:
+		return 1
+	case errB != nil:
+		return -1
+	}
+	return x.Compare(y)
+}
+
+// sendColumn is a column of the user list.
+type sendColumn struct {
+	col  ui.TableColumn
+	cell func(u core.User) string
+}
+
+func sendColumns(o core.ListOptions) []sendColumn {
+	cols := []sendColumn{{ui.TableColumn{Title: "User", MinWidth: 80}, nil}}
+	if o.ShowGroup {
+		cols = append(cols, sendColumn{ui.TableColumn{Title: "Group", Width: 80}, func(u core.User) string { return u.Group }})
+	}
+	if o.ShowHost {
+		cols = append(cols, sendColumn{ui.TableColumn{Title: "Host", Width: 70}, func(u core.User) string { return u.Host }})
+	}
+	if o.ShowLogon {
+		cols = append(cols, sendColumn{ui.TableColumn{Title: "Logon", Width: 70}, func(u core.User) string { return u.Logon }})
+	}
+	if o.ShowIP {
+		cols = append(cols, sendColumn{ui.TableColumn{Title: "IP", Width: 100}, userIP})
+	}
+	if o.ShowPriority {
+		cols = append(cols, sendColumn{ui.TableColumn{Title: "Priority", Width: 56, Align: ui.End}, func(u core.User) string { return fmt.Sprint(u.Priority) }})
+	}
+	return cols
+}
+
+// selectedUsers are the chosen users the list shows, in its order.
+func (sw *sendWin) selectedUsers() []core.User {
+	var out []core.User
+	for _, u := range sw.users {
+		if sw.chosen.Has(u.ID) {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func (sw *sendWin) view(c *ui.Context) {
+	a := sw.a
+	k := bpTheme(c)
+	t := c.Theme()
+	if sw.isMain {
+		syncMenus(a)
+	}
+	sw.users = sendListUsers(a.peers, sw.extra, a.settings.List)
+	users := sw.users
+	selected := sw.selectedUsers()
+
+	ui.Column(c).Fill().Children(func() {
+		// The user list, and the member count beside it.
+		ui.Row(c).Grow(1).MinHeight(110).Padding(8, 8, 0, 8).Gap(8).AlignItems(ui.Stretch).Children(func() {
+			cols := sendColumns(a.settings.List)
+			tcols := make([]ui.TableColumn, len(cols))
+			for i := range cols {
+				tcols[i] = cols[i].col
+			}
+			sw.list.Key = func(i int) any { return users[i].ID }
+			sw.list.Label = func(i int) string { return users[i].Name }
+			sw.list.Selection = &sw.chosen
+			tbl := ui.Table(c, &sw.list, tcols, len(users), func(row, col int) {
+				u := users[row]
+				if col == 0 {
+					ui.Row(c).Gap(4).Children(func() {
+						ui.Box(c).Size(4, 12).Background(t.TextMuted)
+						ui.Text(c, displayName(u)).SingleLine()
+						if u.Absent {
+							ui.Text(c, "!").Bold().TextColor(k.alert).Tooltip(absentTip(u))
+						}
+					})
+					return
+				}
+				ui.Text(c, cols[col].cell(u)).SingleLine()
+			}).Grow(1).Label("Users").Background(k.field).Border(1, k.edge).Radius(0)
+			tbl.Children(func() {
+				if len(users) == 0 {
+					ui.Text(c, "No one is online").TextColor(t.TextMuted).Padding(12)
+				}
+			})
+
+			ui.Column(c).Width(68).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Column(c).Width(68).Padding(2, 0).AlignItems(ui.Center).Background(k.face).Border(1, k.edge).Children(func() {
+					ui.Text(c, "Member").FontSize(12)
+					ui.Textf(c, "%d", len(users)).Bold().FontSize(14)
+				})
+				if ui.Button(c, "Refresh").Tooltip("Refresh the member list").Clicked() {
+					a.net.Refresh()
+				}
+				ui.Button(c, "▾").Label("Menu").Tooltip("Menu").Menu(func(m *ui.Menu) {
+					if m.Item("Sort/Display…").Chosen() {
+						openSortDisplay(a)
+					}
+					if m.Item("Settings…").Chosen() {
+						openSettings(a)
+					}
+					if m.Item("Absence…").Chosen() {
+						openAbsence(a)
+					}
+					if m.Item("Log viewer").Chosen() {
+						openLogViewer(a)
+					}
+				})
+			})
+		})
+
+		// The message.
+		ui.Column(c).Padding(8).Gap(6).Children(func() {
+			ui.TextArea(c, &sw.text).Label("Message").Height(100).Background(k.field).Border(1, k.edge).Radius(0).
+				OnTextKey(func(key ui.TextKey) bool {
+					if key.Key == ui.KeyEnter && key.Mods == ui.Cmd && a.settings.CtrlEnterSends {
+						sw.text = key.Text()
+						if sw.send() {
+							key.SetText(sw.text)
+						}
+						return true
+					}
+					return false
+				})
+			if len(sw.attach) > 0 {
+				ui.Row(c).Wrap().Gap(6).Children(func() {
+					for i, at := range sw.attach {
+						ui.Row(c.Key(i)).Gap(4).Padding(1, 2, 1, 6).Background(k.bar).Radius(3).Children(func() {
+							ui.Textf(c, "%s (%s)", at.Name, sizeText(at.Size)).FontSize(12).SingleLine().MaxWidth(200)
+							ui.Button(c, "×").Label("Remove "+at.Name).Padding(0, 4).OnClick(func() {
+								sw.attach = append(sw.attach[:i:i], sw.attach[i+1:]...)
+							})
+						})
+					}
+				})
+			}
+		})
+
+		// The actions.
+		ui.Row(c).Padding(0, 8, 8, 8).Gap(10).Children(func() {
+			if ui.Button(c, "Capture").Tooltip("Screen capture").Clicked() {
+				openCapture(a, func(img core.Attachment) { sw.attach = append(sw.attach, img) })
+			}
+			if ui.Button(c, "Attach…").Tooltip("Attach files").Clicked() {
+				a.desk.openFiles(sw.win, "Attach Files", sw.attachFiles)
+			}
+			ui.Spacer(c)
+			if ui.PrimaryButton(c, "Send").MinWidth(110).Bold().Disabled(len(selected) == 0).Clicked() {
+				sw.send()
+			}
+			if ui.Checkbox(c, &sw.seal, "Seal").Changed() && !sw.seal {
+				sw.lock = false
+			}
+			if ui.Checkbox(c, &sw.lock, "Lock").Tooltip("The receiver enters a password to open it").Changed() && sw.lock {
+				sw.seal = true
+			}
+			ui.Spacer(c)
+		})
+
+		// The status bar.
+		ui.Row(c).Padding(2, 8).Gap(16).Background(k.bar).Children(func() {
+			ui.Text(c, encryptionText(selected)).FontSize(12)
+			ui.Textf(c, "selected=%d", len(selected)).FontSize(12)
+			ui.Spacer(c)
+			ui.Textf(c, "TCP %d", a.settings.Port).FontSize(12)
+		})
+	})
+
+	failMsg := "Could not deliver the message to " + userNames(sw.failTo) + "."
+	if sw.failErr != "" {
+		failMsg += "\n" + sw.failErr
+	}
+	if ui.AlertDialog(c, &sw.failOpen, "Message not delivered", failMsg, "Cancel", "Retry") == 1 {
+		sw.retry()
+	} else if !sw.failOpen {
+		sw.failTo, sw.failErr = nil, ""
+	}
+}
+
+func displayName(u core.User) string {
+	switch {
+	case u.Name != "":
+		return u.Name
+	case u.Logon != "":
+		return u.Logon
+	}
+	return u.ID
+}
+
+func absentTip(u core.User) string {
+	if u.AbsenceTitle != "" {
+		return "Absent: " + u.AbsenceTitle
+	}
+	return "Absent"
+}
+
+func userNames(us []core.User) string {
+	names := make([]string, len(us))
+	for i, u := range us {
+		names[i] = displayName(u)
+	}
+	return strings.Join(names, ", ")
+}
+
+// encryptionText says how a message to the users goes: encrypted and
+// signed when every one of them has a key.
+func encryptionText(us []core.User) string {
+	if len(us) == 0 {
+		return "RSA2/Signed+"
+	}
+	for _, u := range us {
+		if !u.Encrypt {
+			return "Plain (not encrypted)"
+		}
+	}
+	return "RSA2/Signed+"
+}
+
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
+// attachFiles reads the files chosen and adds them as attachments.
+func (sw *sendWin) attachFiles(paths []string) {
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			log.Println("attach:", err)
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(p))
+		img := ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif"
+		sw.attach = append(sw.attach, core.Attachment{Name: filepath.Base(p), Size: int64(len(data)), Data: data, IsImage: img})
+	}
+}
+
+// send sends the message to the chosen users and reports whether it went.
+func (sw *sendWin) send() bool {
+	a := sw.a
+	to := sw.selectedUsers()
+	if len(to) == 0 {
+		return false
+	}
+	m := core.Message{
+		To:          to,
+		Text:        sw.text,
+		Sealed:      sw.seal || sw.lock,
+		Locked:      sw.lock,
+		Attachments: sw.attach,
+	}
+	if !a.sendMessage(m, sw) {
+		return false
+	}
+	sw.text, sw.attach = "", nil
+	switch {
+	case !sw.isMain:
+		sw.close()
+	case a.settings.HideAfterSend && sw.win != nil:
+		sw.win.Hide()
+	}
+	return true
+}
+
+// retry sends the failed message again to those it did not reach.
+func (sw *sendWin) retry() {
+	m := sw.failMsg
+	m.To = sw.failTo
+	m.ID = ""
+	sw.failTo, sw.failErr = nil, ""
+	sw.a.sendMessage(m, sw)
+}
+
+// sendMessage hands m to the network layer, logs it, and keeps it until
+// its deliveries report.
+func (a *tcpApp) sendMessage(m core.Message, from *sendWin) bool {
+	id, err := a.net.Send(m)
+	if err != nil {
+		from.showFailure(m, m.To, err)
+		return false
+	}
+	m.ID, m.From, m.Time = id, a.net.Self(), time.Now()
+	if a.settings.LogEnabled {
+		if _, err := a.store.Append(m); err != nil {
+			log.Println("log:", err)
+		}
+		logViewerChanged()
+	}
+	p := &pendingSend{msg: m, from: from, left: len(m.To)}
+	a.pending[id] = p
+	// Deliveries the network layer reported before Send returned.
+	early := a.failures[id]
+	delete(a.failures, id)
+	for _, f := range early {
+		a.deliveryDone(p, id, f.to, f.err)
+	}
+	return true
+}
+
+// handleDelivered takes the outcome of a delivery.
+func (a *tcpApp) handleDelivered(to core.User, id string, err error) {
+	p := a.pending[id]
+	if p == nil {
+		// Send has not returned yet: sendMessage takes it then.
+		a.failures[id] = append(a.failures[id], deliveryFailure{to, err})
+		return
+	}
+	a.deliveryDone(p, id, to, err)
+}
+
+func (a *tcpApp) deliveryDone(p *pendingSend, id string, to core.User, err error) {
+	p.left--
+	if p.left <= 0 {
+		delete(a.pending, id)
+	}
+	if err == nil {
+		return
+	}
+	sw := p.from
+	if sw == nil || sw.closed {
+		if a.mainSend == nil {
+			a.showMain()
+		}
+		sw = a.mainSend
+	}
+	if sw != nil {
+		sw.showFailure(p.msg, []core.User{to}, err)
+	}
+}
+
+// showFailure offers to send m again to the users it did not reach.
+func (sw *sendWin) showFailure(m core.Message, to []core.User, err error) {
+	if !sw.failOpen || sw.failMsg.ID != m.ID {
+		sw.failTo, sw.failErr = nil, ""
+	}
+	sw.failMsg = m
+	for _, u := range to {
+		if !hasUser(sw.failTo, u.ID) {
+			sw.failTo = append(sw.failTo, u)
+		}
+	}
+	if err != nil {
+		sw.failErr = err.Error()
+	}
+	sw.failOpen = true
+	if sw.win != nil {
+		sw.win.Show()
+		sw.win.Focus()
+	}
+}

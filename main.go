@@ -1,59 +1,327 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"os"
+	"os/user"
+	"runtime"
+	"time"
+
+	"my-app/internal/core"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
-// app is the state the window shows. Its view builds the interface from
-// it, on the main thread, whenever the window needs a frame: after input,
-// after Window.Update, and while something animates.
-type app struct {
-	name  string
-	count int
-}
-
-func (a *app) view(c *ui.Context) {
-	t := c.Theme()
-	ui.Column(c).Fill().Center().Gap(16).Padding(24).Children(func() {
-		ui.Text(c, "my-app").FontSize(26).Bold()
-		ui.TextInput(c, &a.name).Placeholder("Your name").Label("Name").Width(240)
-		greeting := "Hello!"
-		if a.name != "" {
-			greeting = fmt.Sprintf("Hello, %s!", a.name)
-		}
-		ui.Text(c, greeting).TextColor(t.TextMuted)
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, "−").Width(44).Clicked() {
-				a.count--
-			}
-			ui.Textf(c, "%d", a.count).FontSize(20).Width(48).TextAlign(ui.Center)
-			if ui.PrimaryButton(c, "+").Width(44).Clicked() {
-				a.count++
-			}
-		})
-	})
-}
+// appName is the name the app shows in its windows, menus and notifications.
+const appName = "TCP Messenger"
 
 func main() {
-	a := &app{}
+	// One TCP Messenger per user: it owns the port. A second start brings
+	// the running one's send window forward.
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
+	a := newTCPApp()
+	mygo.App.SetName(appName)
+	mygo.App.OnSecondInstance(func([]string, string) { a.showMain() })
+	mygo.App.OnActivate(func(hasVisibleWindows bool) {
+		if !hasVisibleWindows {
+			a.showMain()
+		}
+	})
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.quitting = true })
+	// Quitting announces the exit to the LAN.
+	mygo.App.OnQuit(func() {
+		if err := a.net.Stop(); err != nil {
+			log.Println("stop:", err)
+		}
+	})
 	mygo.App.WhenReady(func() {
-		mygo.NewWindow(mygo.WindowOptions{
-			Title:     "my-app",
-			Width:     480,
-			Height:    360,
-			MinWidth:  320,
-			MinHeight: 280,
-			// Opens where the user left it last time.
-			StateKey: "main",
-			// The window shows the interface MyGo draws, not a web page.
-			Content: ui.View(a.view),
-		})
+		a.desk = &nativeDesk{a: a}
+		openSendWindow(a, nil, "")
+		setupTray(a)
+		startAutoAbsence(a)
+		if err := startMessenger(a); err != nil {
+			log.Println("start:", err)
+			go mygo.Dialog.Error(appName+" could not start", err.Error())
+		}
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
+
+// newTCPApp opens the backends (backends.go) and loads the settings.
+func newTCPApp() *tcpApp {
+	net, st := openBackends()
+	a := newAppWith(net, st)
+	return a
+}
+
+// newAppWith makes the shared state over the given backends, with a desk
+// that opens no windows until main replaces it: tests keep it.
+func newAppWith(net core.Messenger, st core.Store) *tcpApp {
+	a := &tcpApp{
+		net:      net,
+		store:    st,
+		pending:  map[string]*pendingSend{},
+		failures: map[string][]deliveryFailure{},
+	}
+	a.desk = &headlessDesk{}
+	s, err := st.LoadSettings()
+	if err != nil {
+		log.Println("settings:", err)
+		s = core.DefaultSettings()
+	}
+	if s.Port == 0 {
+		s.Port = core.DefaultPort
+	}
+	if s.QuoteMark == "" {
+		s.QuoteMark = "> "
+	}
+	if s.Nickname == "" {
+		if u, err := user.Current(); err == nil {
+			s.Nickname = u.Username
+		}
+	}
+	a.settings = s
+	return a
+}
+
+// startMessenger starts the network layer with events that hop to the
+// main thread before they touch the app's state.
+func startMessenger(a *tcpApp) error {
+	err := a.net.Start(a.settings, core.Events{
+		PeersChanged: func(users []core.User) {
+			a.desk.post(func() { a.peers = users })
+		},
+		Received: func(m core.Message) {
+			a.desk.post(func() { a.handleReceived(m) })
+		},
+		Opened: func(from core.User, id string) {
+			a.desk.post(func() { a.handleOpened(from, id) })
+		},
+		Delivered: func(to core.User, id string, err error) {
+			a.desk.post(func() { a.handleDelivered(to, id, err) })
+		},
+	})
+	if err != nil {
+		return err
+	}
+	a.peers = a.net.Peers()
+	return nil
+}
+
+// showMain brings the main send window forward, opening it again if it
+// was closed.
+func (a *tcpApp) showMain() {
+	if a.mainSend == nil || a.mainSend.closed {
+		a.mainSend = nil
+		openSendWindow(a, nil, "")
+		return
+	}
+	if w := a.mainSend.win; w != nil {
+		w.Show()
+		w.Restore()
+		w.Focus()
+	}
+}
+
+// invalidateAll redraws every window of the send, receive and main kinds,
+// after state they show changed.
+func (a *tcpApp) invalidateAll() {
+	for _, sw := range a.sendWins {
+		if sw.win != nil {
+			sw.win.Invalidate()
+		}
+	}
+	for _, rw := range a.recvWins {
+		if rw.win != nil {
+			rw.win.Invalidate()
+		}
+	}
+}
+
+// deskAPI is what the windows need from the desktop. nativeDesk is the
+// real one; headlessDesk runs everything in place and opens nothing, for
+// tests.
+type deskAPI interface {
+	// post runs fn on the main thread, then redraws the windows.
+	post(fn func())
+	// background runs fn off the main thread.
+	background(fn func())
+	// newWindow opens a window, or returns nil without a desktop.
+	newWindow(opts mygo.WindowOptions) *mygo.Window
+	// openFiles asks for files to open; done gets them on the main
+	// thread, and is not called when canceled.
+	openFiles(parent *mygo.Window, title string, done func(paths []string))
+	// saveFile asks where to save; done gets the path on the main thread,
+	// and is not called when canceled.
+	saveFile(parent *mygo.Window, defaultPath string, done func(path string))
+	// notify shows a system notification; onClick runs on the main thread.
+	notify(title, body string, onClick func())
+	beep()
+	// native reports whether menus, the tray and dialogs exist.
+	native() bool
+}
+
+type nativeDesk struct{ a *tcpApp }
+
+func (d *nativeDesk) post(fn func()) {
+	run := func() {
+		fn()
+		d.a.invalidateAll()
+		syncMenus(d.a)
+	}
+	if w := d.a.main; w != nil && !w.IsDestroyed() {
+		w.Update(run)
+		return
+	}
+	mygo.RunOnMain(run)
+}
+
+func (d *nativeDesk) background(fn func()) { go fn() }
+
+func (d *nativeDesk) newWindow(opts mygo.WindowOptions) *mygo.Window {
+	return mygo.NewWindow(opts)
+}
+
+func (d *nativeDesk) openFiles(parent *mygo.Window, title string, done func([]string)) {
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: title, Multiple: true})
+		if err != nil {
+			log.Println("open dialog:", err)
+		}
+		if len(paths) > 0 {
+			d.post(func() { done(paths) })
+		}
+	}()
+}
+
+func (d *nativeDesk) saveFile(parent *mygo.Window, defaultPath string, done func(string)) {
+	go func() {
+		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: parent, DefaultPath: defaultPath, CreateDirectories: true})
+		if err != nil {
+			log.Println("save dialog:", err)
+		}
+		if path != "" {
+			d.post(func() { done(path) })
+		}
+	}()
+}
+
+func (d *nativeDesk) notify(title, body string, onClick func()) {
+	if !mygo.NotificationsSupported() {
+		return
+	}
+	n := mygo.NewNotification(mygo.NotificationOptions{Title: title, Body: body})
+	if onClick != nil {
+		n.OnClick(func() {
+			d.post(onClick)
+			n.Close()
+		})
+	}
+	go func() {
+		if err := n.Show(); err != nil {
+			log.Println("notification:", err)
+		}
+	}()
+}
+
+func (d *nativeDesk) beep()        { mygo.Shell.Beep() }
+func (d *nativeDesk) native() bool { return true }
+
+// headlessDesk is the desk of tests: everything runs in place, no window
+// opens, and the dialogs and notifications are recorded.
+type headlessDesk struct {
+	notes     []string // "title: body" of each notification
+	beeps     int
+	openPaths []string // what the next open dialog answers
+	savePath  string   // what the next save dialog answers
+	asked     []string // default paths of save dialogs
+}
+
+func (d *headlessDesk) post(fn func())                            { fn() }
+func (d *headlessDesk) background(fn func())                      { fn() }
+func (d *headlessDesk) newWindow(mygo.WindowOptions) *mygo.Window { return nil }
+func (d *headlessDesk) openFiles(_ *mygo.Window, _ string, done func([]string)) {
+	if len(d.openPaths) > 0 {
+		done(d.openPaths)
+	}
+}
+func (d *headlessDesk) saveFile(_ *mygo.Window, def string, done func(string)) {
+	d.asked = append(d.asked, def)
+	if d.savePath != "" {
+		done(d.savePath)
+	}
+}
+func (d *headlessDesk) notify(title, body string, _ func()) {
+	d.notes = append(d.notes, title+": "+body)
+}
+func (d *headlessDesk) beep()        { d.beeps++ }
+func (d *headlessDesk) native() bool { return false }
+
+// Classic desktop colors, from the Bluepane design tokens.
+var (
+	bpFace      = ui.Hex("#f0f0f0")
+	bpField     = ui.Hex("#ffffff")
+	bpFieldEdge = ui.Hex("#7a7a7a")
+	bpSelect    = ui.Hex("#3d3dd6")
+	bpBar       = ui.Hex("#c8c8c8")
+	bpAlert     = ui.Hex("#c41010")
+	bpMuted     = ui.Hex("#404040")
+	bpHL        = ui.Hex("#0077d4")
+
+	bpFaceDark      = ui.Hex("#262c3c")
+	bpFieldDark     = ui.Hex("#0f1526")
+	bpFieldEdgeDark = ui.Hex("#6b7591")
+	bpBarDark       = ui.Hex("#323a52")
+	bpAlertDark     = ui.Hex("#ff6b6b")
+)
+
+// bpColors are the Bluepane colors for the current appearance.
+type bpColors struct {
+	face, field, edge, bar, alert ui.Color
+}
+
+// bpTheme gives the window the classic look: a grey face, white fields and
+// a blue selection, squarer and more compact than the default.
+func bpTheme(c *ui.Context) bpColors {
+	t := *c.Theme()
+	k := bpColors{bpFace, bpField, bpFieldEdge, bpBar, bpAlert}
+	if t.Dark {
+		k = bpColors{bpFaceDark, bpFieldDark, bpFieldEdgeDark, bpBarDark, bpAlertDark}
+		t.Accent = ui.Hex("#2f6fd0")
+	} else {
+		t.Accent, t.AccentHover, t.AccentPressed = bpSelect, ui.Hex("#3333c4"), ui.Hex("#2a2ab0")
+		t.TextMuted = bpMuted
+		t.Focus = bpHL
+		t.Border = ui.Hex("#adadad")
+	}
+	t.Background = k.face
+	t.Radius = 3
+	t.Spacing = 3
+	if runtime.GOOS == "windows" {
+		t.Font = "Segoe UI"
+	}
+	c.SetTheme(&t)
+	return k
+}
+
+// longTime formats a message's time as the receive window shows it.
+func longTime(t time.Time) string { return t.Format("Mon Jan 02 15:04:05 2006") }
+
+// fakeBackends are the demo backends of TCPMSG_FAKE=1.
+func fakeBackends() (core.Messenger, core.Store) {
+	now := time.Now()
+	return core.NewFakeMessenger(
+		core.User{ID: "kaga@H24", Name: "Kaga", Group: "Tech", Host: "H24", Logon: "kaga", Addr: "192.168.1.24:2425", Encrypt: true, LastSeen: now},
+		core.User{ID: "motoyama@H23", Name: "Motoyama", Group: "Tech", Host: "H23", Logon: "motoyama", Addr: "192.168.1.23:2425", Encrypt: true, LastSeen: now},
+		core.User{ID: "oda@H22", Name: "Oda", Group: "Tech", Host: "H22", Logon: "oda", Addr: "192.168.1.22:2425", Absent: true, AbsenceTitle: "Meeting", LastSeen: now},
+		core.User{ID: "tanabe@S07", Name: "Tanabe", Group: "Sales", Host: "S07", Logon: "tanabe", Addr: "192.168.2.7:2425", Encrypt: true, LastSeen: now},
+		core.User{ID: "hinomizu@Q01", Name: "Hinomizu", Group: "Strategy", Host: "Q01", Logon: "hinomizu", Addr: "192.168.3.1:2425", LastSeen: now},
+	), core.NewMemStore()
+}
+
+func fakeMode() bool { return os.Getenv("TCPMSG_FAKE") == "1" }

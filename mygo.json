@@ -1,6 +1,6 @@
 {
-  "name": "my-app",
-  "identifier": "com.example.myapp",
+  "name": "TCP Messenger",
+  "identifier": "com.tcpmessenger.app",
   "version": "0.1.0",
   "out": "build"
 }

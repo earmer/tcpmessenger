@@ -12,14 +12,14 @@ const DefaultPort = 2425
 // User is a member of the LAN that announced itself.
 type User struct {
 	// ID identifies the user across restarts: "<logon>@<host>".
-	ID        string
-	Name      string // nickname shown in lists
-	Group     string
-	Host      string // machine name
-	Logon     string // operating system account name
-	Addr      string // "ip:port" to send messages to
-	Priority  int    // display priority, 0 is normal, -1 hidden
-	Absent    bool
+	ID           string
+	Name         string // nickname shown in lists
+	Group        string
+	Host         string // machine name
+	Logon        string // operating system account name
+	Addr         string // "ip:port" to send messages to
+	Priority     int    // display priority, 0 is normal, -1 hidden
+	Absent       bool
 	AbsenceTitle string
 	// Encrypt is true when the peer advertised a public key.
 	Encrypt bool
@@ -39,19 +39,22 @@ type Attachment struct {
 
 // Message is one message, sent or received.
 type Message struct {
-	ID       string // unique, chosen by the sender
-	From     User
-	To       []User
-	Text     string
-	Sealed   bool // the receiver must open it before reading
-	Locked   bool // sealed with a password (the receiver's setting)
+	ID          string // unique, chosen by the sender
+	From        User
+	To          []User
+	Text        string
+	Sealed      bool // the receiver must open it before reading
+	Locked      bool // sealed with a password (the receiver's setting)
 	Attachments []Attachment
-	Time     time.Time
-	Incoming bool
+	Time        time.Time
+	Incoming    bool
 	// Opened is set on incoming sealed messages once opened.
 	Opened bool
 	// Signed is true when the message carried a valid signature.
 	Signed bool
+	// AutoReply marks the absence message sent back automatically; it is
+	// never answered in turn.
+	AutoReply bool
 }
 
 // AbsenceMode is one of the absence modes the user defined.
@@ -72,48 +75,48 @@ const (
 // ListOptions are the columns and sort order of the send window's list.
 type ListOptions struct {
 	ShowGroup, ShowHost, ShowPriority, ShowLogon, ShowIP, GridLines bool
-	SortByGroup, GroupReverse                                     bool
-	Second                                                        SortKey
-	SecondReverse, IgnoreCase                                     bool
+	SortByGroup, GroupReverse                                       bool
+	Second                                                          SortKey
+	SecondReverse, IgnoreCase                                       bool
 }
 
 // Settings are everything the Settings window edits. The store saves them
 // as JSON.
 type Settings struct {
 	// Basic
-	Nickname   string
-	Group      string
-	Port       int
+	Nickname       string
+	Group          string
+	Port           int
 	BroadcastAddrs []string // extra unicast or broadcast addresses
-	DialUp     bool
+	DialUp         bool
 
 	// Send
-	SealByDefault   bool
-	QuoteOnReply    bool
-	QuoteMark       string
-	CtrlEnterSends  bool
-	HideAfterSend   bool
+	SealByDefault  bool
+	QuoteOnReply   bool
+	QuoteMark      string
+	CtrlEnterSends bool
+	HideAfterSend  bool
 
 	// Receive
-	PopupOnReceive  bool
+	PopupOnReceive    bool
 	NoPopupWhenAbsent bool
-	PlaySound       bool
-	OpenCheck       bool // notify the sender when a sealed message is opened
-	NotifyWithToast bool
+	PlaySound         bool
+	OpenCheck         bool // notify the sender when a sealed message is opened
+	NotifyWithToast   bool
 
 	// Absence
-	Absent       bool
-	AbsenceIndex int
-	AbsenceModes []AbsenceMode
-	AutoAbsence  bool
+	Absent             bool
+	AbsenceIndex       int
+	AbsenceModes       []AbsenceMode
+	AutoAbsence        bool
 	AutoAbsenceMinutes int
 
 	// Log
-	LogEnabled  bool
-	LogFile     string
+	LogEnabled   bool
+	LogFile      string
 	LogLogonName bool
-	LogIPAddr   bool
-	LogImages   bool
+	LogIPAddr    bool
+	LogImages    bool
 
 	// Send window
 	List ListOptions
@@ -122,20 +125,20 @@ type Settings struct {
 	DownloadDir string
 
 	// Misc
-	StartAtLogin bool
-	Password     string // asked before opening locked messages, hashed
+	StartAtLogin  bool
+	Password      string // asked before opening locked messages, hashed
 	CaptureFormat string // "png" or "jpg"
 }
 
 // DefaultSettings returns the settings of a first run.
 func DefaultSettings() Settings {
 	return Settings{
-		Port:           DefaultPort,
-		QuoteOnReply:   true,
-		QuoteMark:      "> ",
-		CtrlEnterSends: true,
-		PopupOnReceive: true,
-		OpenCheck:      true,
+		Port:            DefaultPort,
+		QuoteOnReply:    true,
+		QuoteMark:       "> ",
+		CtrlEnterSends:  true,
+		PopupOnReceive:  true,
+		OpenCheck:       true,
 		NotifyWithToast: true,
 		AbsenceModes: []AbsenceMode{
 			{"Meeting", "I am in a meeting. I will reply when I return."},
@@ -144,8 +147,8 @@ func DefaultSettings() Settings {
 			{"Remote", "Working remotely. Messages reach me with a delay."},
 		},
 		AutoAbsenceMinutes: 10,
-		LogEnabled:     true,
-		LogImages:      true,
+		LogEnabled:         true,
+		LogImages:          true,
 		List: ListOptions{
 			ShowGroup: true, ShowHost: true, GridLines: true,
 			SortByGroup: true, Second: SortByName,
@@ -157,7 +160,7 @@ func DefaultSettings() Settings {
 // LogEntry is a message recorded in the log, with what the log viewer adds.
 type LogEntry struct {
 	Message
-	Seq     int64  // position in the log, from 1
+	Seq     int64 // position in the log, from 1
 	Starred bool
 	Marked  bool
 	Note    string
@@ -165,12 +168,12 @@ type LogEntry struct {
 
 // LogQuery filters the log viewer's list. Zero fields match everything.
 type LogQuery struct {
-	Text      string
-	UserID    string
-	Starred   bool
-	Marked    bool
-	Since     time.Time
-	Until     time.Time
+	Text    string
+	UserID  string
+	Starred bool
+	Marked  bool
+	Since   time.Time
+	Until   time.Time
 }
 
 // Events are what the network layer reports. Callbacks run on the network

@@ -17,6 +17,19 @@ type tcpApp struct {
 
 	// main is the send window opened at startup (owned by sendwin.go).
 	main *mygo.Window
+
+	// Added for the send, receive and tray windows (main.go, sendwin.go,
+	// recvwin.go, tray.go).
+	desk     deskAPI                      // the desktop: windows, dialogs, notifications (faked in tests)
+	mainSend *sendWin                     // the state of the main send window
+	sendWins []*sendWin                   // every open send window, the main one included
+	recvWins []*recvWin                   // every open receive window
+	queued   []core.Message               // received without a popup, not shown yet
+	pending  map[string]*pendingSend      // sent messages awaiting their deliveries, by ID
+	failures map[string][]deliveryFailure // deliveries reported before Send returned
+	tray     *mygo.Tray
+	menuSig  string // what the tray and app menus were last built from
+	quitting bool
 }
 
 // saveSettings stores a.settings and tells the network layer of changes
