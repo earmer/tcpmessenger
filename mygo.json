@@ -1,0 +1,6 @@
+{
+  "name": "my-app",
+  "identifier": "com.example.myapp",
+  "version": "0.1.0",
+  "out": "build"
+}
