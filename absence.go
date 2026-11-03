@@ -121,19 +121,18 @@ func (av *absenceView) view(c *ui.Context) {
 	t := applyAuxTheme(c)
 	ui.Column(c).Fill().Children(func() {
 		ui.Column(c).Grow(1).Padding(12).Gap(12).Children(func() {
-			ui.Text(c, `Absent users show "!" in other members' lists. Their absence message is sent back to whoever messages them.`).
-				Wrap().Padding(6, 8).Background(t.Surface).Border(1, t.Border).FontSize(12)
+			bpInfo(c, `Absent users show "!" in other members' lists. Their absence message is sent back to whoever messages them.`).FontSize(14)
 			ui.Row(c).Gap(12).AlignItems(ui.Stretch).Children(func() {
 				ui.Column(c).Width(170).Gap(6).Children(func() {
 					ui.List(c, &av.list, len(av.modes), func(i int) {
-						ui.Textf(c, "%d: %s", i+1, av.modes[i].Title).Padding(3, 6).MaxLines(1)
+						ui.Textf(c, "%d: %s", i+1, av.modes[i].Title).Padding(1, 4).FontSize(14).MaxLines(1)
 					}).Height(170).Background(t.Surface).Border(1, t.Border).Label("Absence modes")
 					ui.Row(c).Gap(4).Children(func() {
-						if ui.Button(c, "Add").Grow(1).Clicked() {
+						if bpMiniButton(c, "Add").Grow(1).Clicked() {
 							av.modes = append(av.modes, core.AbsenceMode{Title: fmt.Sprintf("Mode %d", len(av.modes)+1)})
 							av.sel = len(av.modes) - 1
 						}
-						if ui.Button(c, "Delete").Grow(1).Disabled(len(av.modes) <= 1).Clicked() {
+						if bpMiniButton(c, "Delete").Grow(1).Disabled(len(av.modes) <= 1).Clicked() {
 							av.deleteMode()
 						}
 					})
@@ -160,23 +159,23 @@ func (av *absenceView) view(c *ui.Context) {
 			})
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
 				if av.a.settings.Absent {
-					if ui.Button(c, "Not Absent").Clicked() {
+					if bpDlgButton(c, "Not Absent", false).Clicked() {
 						av.status = ""
 						av.setAbsent(false)
 					}
 					ui.Spacer(c)
 				}
-				if ui.PrimaryButton(c, "Set & Absent").Clicked() {
+				if bpDlgButton(c, "Set & Absent", true).Clicked() {
 					av.status = ""
 					av.setAbsent(true)
 				}
-				if ui.Button(c, "OK").Clicked() {
+				if bpDlgButton(c, "OK", false).Clicked() {
 					av.commit()
 					if av.save() {
 						av.close()
 					}
 				}
-				if ui.Button(c, "Cancel").Clicked() {
+				if bpDlgButton(c, "Cancel", false).Clicked() {
 					av.close()
 				}
 			})

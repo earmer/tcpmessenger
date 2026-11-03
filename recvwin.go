@@ -213,18 +213,19 @@ func (rw *recvWin) saveAttachment(i int) {
 
 func (rw *recvWin) view(c *ui.Context) {
 	a := rw.a
-	k := bpTheme(c)
+	k := bpApply(c, groundChrome, false)
 	t := c.Theme()
 	m := rw.m
 	ui.Column(c).Fill().Children(func() {
 		// Who sent it, and when.
-		ui.Column(c).Margin(6, 8, 0, 8).Padding(6, 8).Gap(1).Background(k.face).Border(1, k.edge).Children(func() {
-			ui.Text(c, "Message from...").FontSize(12).TextColor(t.TextMuted)
+		bpBevelOut(ui.Column(c).Margin(4, 8, 0, 8).Padding(6, 8).Gap(1).Background(k.face).Border(1, k.fieldEdge), k).
+			Font(bpMonoFont()).Children(func() {
+			ui.Text(c, "Message from...")
 			from := displayName(m.From)
 			if g := strings.Trim(m.From.Group+"/"+m.From.Host, "/"); g != "" {
 				from += " (" + g + ")"
 			}
-			ui.Text(c, from).Bold().TextAlign(ui.Center).Selectable()
+			ui.Text(c, from).TextAlign(ui.Center).Selectable()
 			ui.Text(c, "at "+longTime(m.Time)).TextAlign(ui.Center)
 			var state []string
 			if m.Sealed {
@@ -246,27 +247,27 @@ func (rw *recvWin) view(c *ui.Context) {
 		})
 
 		// The message.
-		ui.Column(c).Grow(1).Margin(8).Background(k.field).Border(1, k.edge).Children(func() {
+		bpField(c, ui.Column(c).Grow(1).Margin(8)).Children(func() {
 			switch {
 			case rw.asking:
 				ui.Column(c).Grow(1).Center().Gap(8).Padding(12).Children(func() {
 					ui.Text(c, "This message is locked. Enter your password.")
 					in := ui.TextInput(c, &rw.password).Password().Label("Password").Placeholder("Password").Width(200).AutoFocus()
 					if rw.wrong {
-						ui.Text(c, "Wrong password").TextColor(k.alert)
+						ui.Text(c, "Wrong password").TextColor(k.alertInk)
 					}
 					ui.Row(c).Gap(8).Children(func() {
-						if ui.Button(c, "Cancel").Clicked() {
+						if bpButton(c, "Cancel").Clicked() {
 							rw.asking, rw.wrong, rw.password = false, false, ""
 						}
-						if ui.PrimaryButton(c, "OK").Clicked() || in.Submitted() {
+						if bpBoldButton(c, "OK").Border(1, k.btnDefEdge).Clicked() || in.Submitted() {
 							rw.open()
 						}
 					})
 				})
 			case !rw.opened:
 				ui.Column(c).Grow(1).Center().Children(func() {
-					if ui.Button(c, "").Label("Open").MinWidth(200).Height(60).Children(func() {
+					if bpButtonBase(c, "Open").MinWidth(200).Height(60).Children(func() {
 						ui.Column(c).AlignItems(ui.Center).Children(func() {
 							ui.Text(c, "Unopened").Bold().FontSize(14)
 							ui.Text(c, "(Click to open)")
@@ -296,7 +297,7 @@ func (rw *recvWin) view(c *ui.Context) {
 						}
 						ui.Row(c.Key(-1-i)).Padding(2, 8).Gap(8).Children(func() {
 							ui.Textf(c, "%s (%s)", at.Name, sizeText(at.Size)).SingleLine().Grow(1)
-							if ui.Button(c, "Save…").Label("Save " + at.Name).Clicked() {
+							if bpButton(c, "Save…").Label("Save " + at.Name).Clicked() {
 								rw.saveAttachment(i)
 							}
 						})
@@ -309,15 +310,15 @@ func (rw *recvWin) view(c *ui.Context) {
 		})
 
 		// The actions.
-		ui.Row(c).Padding(0, 8, 10, 8).Gap(10).Children(func() {
-			if ui.Button(c, "Log").Label("Log viewer").Tooltip("Open the log viewer").Clicked() {
+		ui.Row(c).Padding(0, 8, 10, 8).Gap(10).AlignItems(ui.Center).Children(func() {
+			if bpIconButton(c, iconLog, "Log viewer").Size(26, 26).Clicked() {
 				openLogViewer(a)
 			}
 			ui.Spacer(c)
-			if ui.Button(c, "Close").MinWidth(80).Clicked() {
+			if bpButton(c, "Close").MinWidth(90).Clicked() {
 				rw.close()
 			}
-			if ui.PrimaryButton(c, "Reply").MinWidth(100).Bold().Clicked() {
+			if bpBoldButton(c, "Reply").MinWidth(110).Border(1, k.btnDefEdge).Clicked() {
 				rw.reply()
 			}
 			ui.Checkbox(c, &rw.quote, "Quote")

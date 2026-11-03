@@ -465,10 +465,10 @@ func (e *capEditor) toolbar(c *ui.Context) {
 				}
 			}
 			ui.Box(c).Size(1, 20).Background(capEdge)
-			if ui.Button(c, "Undo").Disabled(!e.doc.canUndo() && !e.commenting).Tooltip("Undo (Cmd+Z)").Clicked() {
+			if bpButton(c, "Undo").Disabled(!e.doc.canUndo() && !e.commenting).Tooltip("Undo (Cmd+Z)").Clicked() {
 				e.undo()
 			}
-			if ui.Button(c, "Redo").Disabled(!e.doc.canRedo()).Tooltip("Redo (Shift+Cmd+Z)").Clicked() {
+			if bpButton(c, "Redo").Disabled(!e.doc.canRedo()).Tooltip("Redo (Shift+Cmd+Z)").Clicked() {
 				e.redo()
 			}
 		}).Label("Capture tools").Grow(1)
@@ -603,7 +603,7 @@ func (e *capEditor) bottomRow(c *ui.Context) {
 		ui.Text(c, "Tool: "+e.tool.String()).Width(140)
 		ui.Text(c, e.status).TextColor(ui.Hex("#404040")).Grow(1)
 		ui.Select(c.Key("format"), &e.format, []string{"PNG", "JPG"}).Label("Save format").Width(80)
-		if ui.Button(c, "Save as...").Clicked() {
+		if bpButton(c, "Save as...").Clicked() {
 			ext := normFormat(e.format)
 			if data, err := e.encoded(ext); err != nil {
 				e.status = err.Error()
@@ -611,7 +611,7 @@ func (e *capEditor) bottomRow(c *ui.Context) {
 				e.onSave(data, ext)
 			}
 		}
-		if ui.Button(c, "Copy").Clicked() {
+		if bpButton(c, "Copy").Clicked() {
 			data, err := e.encoded("png") // the clipboard takes PNG
 			if err == nil && e.onCopy != nil {
 				err = e.onCopy(data)
@@ -622,14 +622,14 @@ func (e *capEditor) bottomRow(c *ui.Context) {
 				e.status = "Copied to the clipboard"
 			}
 		}
-		if ui.PrimaryButton(c, "Paste to Send").Clicked() {
+		if bpBoldButton(c, "Paste to Send").Clicked() {
 			if att, err := e.attachment(); err != nil {
 				e.status = err.Error()
 			} else if e.onSend != nil {
 				e.onSend(att)
 			}
 		}
-		if ui.Button(c, "Cancel").Clicked() {
+		if bpButton(c, "Cancel").Clicked() {
 			if e.onCancel != nil {
 				e.onCancel()
 			}

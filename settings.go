@@ -41,71 +41,27 @@ func openSettings(a *tcpApp) {
 	})
 }
 
-// The Bluepane look: a grey face, white fields, blue selection.
+// The log viewer's highlight colors, from the Bluepane tokens.
 var (
-	lvMarkColor = ui.Hex("#99ff99")
-	lvStarColor = ui.Hex("#e6b800")
+	lvMarkColor = bpLight.mark
+	lvStarColor = bpLight.star
 )
 
-// auxTheme is the theme of the secondary windows, after the Bluepane tokens.
-func auxTheme(dark bool) *ui.Theme {
-	if dark {
-		t := ui.DarkTheme()
-		t.Background = ui.Hex("#262c3c")
-		t.Surface = ui.Hex("#323a52")
-		t.SurfaceHover = ui.Hex("#2b3a5c")
-		t.SurfacePressed = ui.Hex("#22314f")
-		t.Border = ui.Hex("#6b7591")
-		t.Text = ui.Hex("#e8ecf7")
-		t.TextMuted = ui.Hex("#a9b4cc")
-		t.Accent = ui.Hex("#2f6fd0")
-		t.AccentHover = ui.Hex("#4a8ae8")
-		t.AccentPressed = ui.Hex("#22314f")
-		t.Radius = 3
-		return t
-	}
-	t := ui.LightTheme()
-	t.Background = ui.Hex("#f0f0f0")
-	t.Surface = ui.Hex("#ffffff")
-	t.SurfaceHover = ui.Hex("#e5f1fb")
-	t.SurfacePressed = ui.Hex("#cce4f7")
-	t.Border = ui.Hex("#adadad")
-	t.Text = ui.Hex("#000000")
-	t.TextMuted = ui.Hex("#404040")
-	t.Accent = ui.Hex("#0077d4")
-	t.AccentHover = ui.Hex("#1a73d9")
-	t.AccentPressed = ui.Hex("#3d3dd6")
-	t.Danger = ui.Hex("#ee2222")
-	t.Radius = 3
-	return t
-}
-
-var auxThemes = [2]*ui.Theme{auxTheme(false), auxTheme(true)}
-
-// applyAuxTheme sets the secondary windows' theme for this frame,
-// following the desktop's dark mode, and returns it.
+// applyAuxTheme gives a secondary window the Bluepane dialog theme on the
+// face ground, following the desktop's dark mode, and returns it.
 func applyAuxTheme(c *ui.Context) *ui.Theme {
-	t := auxThemes[0]
-	if c.Theme().Dark {
-		t = auxThemes[1]
-	}
-	c.SetTheme(t)
-	return t
+	bpApply(c, groundFace, true)
+	return c.Theme()
 }
 
-// statusBar is a row of texts along the bottom of a window.
+// auxStatusBar is the status strip along the bottom of a window.
 func auxStatusBar(c *ui.Context, t *ui.Theme, fn func()) {
-	ui.Divider(c)
-	ui.Row(c).Gap(16).Padding(3, 10).AlignItems(ui.Center).Children(fn)
+	bpStatusBar(c, fn)
 }
 
-// groupBox is a framed group of controls under a legend, as a fieldset.
+// auxGroup is a framed group of controls under a legend, as a fieldset.
 func auxGroup(c *ui.Context, legend string, fn func()) ui.Element {
-	t := c.Theme()
-	return ui.Column(c).Gap(6).Children(func() {
-		ui.Text(c, legend).Bold().FontSize(12).TextColor(t.TextMuted)
-		ui.Column(c).Gap(6).Padding(8, 10).Border(1, t.Border).Radius(t.Radius).Children(fn)
-	})
+	return bpGroup(c, legend, fn)
 }
 
 // labeled is a row of a label of a fixed width and a control.
@@ -279,20 +235,20 @@ func (sv *settingsView) view(c *ui.Context) {
 		ui.Row(c).Grow(1).Gap(12).Padding(12).AlignItems(ui.Stretch).Children(func() {
 			ui.Column(c).Width(190).Gap(8).Children(func() {
 				ui.List(c, &sv.cats, len(settingsCategories), func(i int) {
-					ui.Text(c, settingsCategories[i]).Padding(4, 8)
+					ui.Text(c, settingsCategories[i]).Padding(1, 4).FontSize(14)
 				}).Grow(1).Background(t.Surface).Border(1, t.Border).Label("Categories")
-				ui.Grid(c).Columns(2).Gap(6).Children(func() {
-					if ui.PrimaryButton(c, "OK").Clicked() && sv.apply() {
+				ui.Column(c).Gap(8).Padding(8, 24, 0, 24).Children(func() {
+					if bpDlgButton(c, "OK", true).Clicked() && sv.apply() {
 						sv.close()
 					}
-					if ui.Button(c, "Apply").Clicked() {
+					if bpDlgButton(c, "Apply", false).Clicked() {
 						sv.apply()
 					}
-					if ui.Button(c, "Cancel").Clicked() {
+					if bpDlgButton(c, "Cancel", false).Clicked() {
 						sv.load()
 						sv.close()
 					}
-					ui.Button(c, "Help").Disabled(true)
+					bpDlgButton(c, "Help", false).Margin(8, 0, 0, 0).Disabled(true)
 				})
 			})
 			ui.Scroll(c).Grow(1).Gap(12).Padding(0, 8, 0, 0).Children(func() {
@@ -375,10 +331,10 @@ func (sv *settingsView) basic(c *ui.Context) {
 				auxOffCheck(c, "Unicast required", false)
 			})
 			ui.Column(c).Gap(4).Children(func() {
-				if ui.Button(c, ">>").Label("Add").Clicked() {
+				if bpMiniButton(c, ">>").Label("Add").Clicked() {
 					sv.addAddr()
 				}
-				if ui.Button(c, "<<").Label("Remove").Disabled(sv.addrSel < 0).Clicked() {
+				if bpMiniButton(c, "<<").Label("Remove").Disabled(sv.addrSel < 0).Clicked() {
 					sv.removeAddr()
 				}
 			})
@@ -386,7 +342,7 @@ func (sv *settingsView) basic(c *ui.Context) {
 				ui.Text(c, sv.s.BroadcastAddrs[i]).Padding(3, 6)
 			}).Width(180).Height(96).Background(c.Theme().Surface).Border(1, c.Theme().Border).Label("Broadcast addresses")
 		})
-		auxNote(c, "If Master Mode is set, this setting is unnecessary")
+		bpInfo(c, "If Master Mode is set, this setting is unnecessary").TextAlign(ui.Center)
 	})
 	auxGroup(c, "Network", func() {
 		auxLabeled(c, "Port", 160, func() {
@@ -476,7 +432,7 @@ func (sv *settingsView) send(c *ui.Context) {
 			ui.Text(c, "Quoted Prefix")
 			ui.TextInput(c, &sv.s.QuoteMark).Label("Quoted prefix").Width(60)
 			ui.Spacer(c)
-			if ui.Button(c, "Sort/Display…").Clicked() {
+			if bpDlgButton(c, "Sort/Display…", false).Clicked() {
 				openSortDisplay(sv.a)
 			}
 		})
@@ -546,7 +502,7 @@ func (sv *settingsView) logPane(c *ui.Context) {
 	auxGroup(c, "Logging", func() {
 		ui.Checkbox(c, &sv.s.LogEnabled, "Logging available")
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, "LogFile…").Disabled(!sv.s.LogEnabled).Clicked() {
+			if bpDlgButton(c, "LogFile…", false).Disabled(!sv.s.LogEnabled).Clicked() {
 				sv.pickFile("Log file", sv.s.LogFile, func(p string) {
 					if p != "" {
 						sv.s.LogFile = p
@@ -572,14 +528,14 @@ func (sv *settingsView) download(c *ui.Context) {
 	auxGroup(c, "Auto Save", func() {
 		auxOffCheck(c, "Enable to download attached files automatically", false)
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, "Download folder…").Clicked() {
+			if bpDlgButton(c, "Download folder…", false).Clicked() {
 				sv.pickDir("Download folder", sv.s.DownloadDir, func(p string) {
 					if p != "" {
 						sv.s.DownloadDir = p
 					}
 				})
 			}
-			if ui.Button(c, "Open").Disabled(sv.s.DownloadDir == "").Clicked() {
+			if bpDlgButton(c, "Open", false).Disabled(sv.s.DownloadDir == "").Clicked() {
 				c.OpenURL("file://" + sv.s.DownloadDir)
 			}
 		})
@@ -622,7 +578,7 @@ func (sv *settingsView) update(c *ui.Context) {
 	auxGroup(c, "Auto update", func() {
 		auxOffCheck(c, "Regularly check the latest version", false)
 		auxOffCheck(c, "Check the latest version, but no install", false)
-		ui.Button(c, "Check Update").Disabled(true)
+		bpDlgButton(c, "Check Update", false).Disabled(true)
 	})
 }
 
@@ -641,7 +597,7 @@ func (sv *settingsView) misc(c *ui.Context) {
 			ui.Field(c, "Confirm password", func() { ui.TextInput(c, &sv.pw2).Password().Width(180) })
 		})
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, "Set Password").Disabled(sv.pw1 == "").Clicked() {
+			if bpDlgButton(c, "Set Password", false).Disabled(sv.pw1 == "").Clicked() {
 				if sv.pw1 != sv.pw2 {
 					sv.pwMsg = "The passwords differ."
 				} else {
@@ -650,7 +606,7 @@ func (sv *settingsView) misc(c *ui.Context) {
 					sv.pwMsg = "Password set (saved with OK or Apply)."
 				}
 			}
-			if ui.Button(c, "Clear Password").Disabled(sv.s.Password == "").Clicked() {
+			if bpDlgButton(c, "Clear Password", false).Disabled(sv.s.Password == "").Clicked() {
 				sv.s.Password = ""
 				sv.pwMsg = "Password cleared (saved with OK or Apply)."
 			}
@@ -668,7 +624,7 @@ func (sv *settingsView) misc(c *ui.Context) {
 		auxLabeled(c, "Other-segment UDP rate limit", 200, func() { auxOffInput(c, "UDP rate limit", "0", 60) })
 	})
 	auxGroup(c, "Export Settings", func() {
-		ui.Button(c, "Export settings to .reg file").Disabled(true)
+		bpDlgButton(c, "Export settings to .reg file", false).Disabled(true)
 		auxNote(c, fmt.Sprintf("Settings are kept in %s.", settingsDirLabel(sv.a)))
 	})
 }

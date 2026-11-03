@@ -107,7 +107,7 @@ func (sd *sortDisplayView) view(c *ui.Context) {
 		})
 		ui.Spacer(c)
 		ui.Row(c).Justify(ui.Center).Children(func() {
-			if ui.PrimaryButton(c, "OK").Width(90).Clicked() {
+			if bpDlgButton(c, "OK", true).Width(90).Clicked() {
 				sd.close()
 			}
 		})

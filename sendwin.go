@@ -262,7 +262,7 @@ func (sw *sendWin) selectedUsers() []core.User {
 
 func (sw *sendWin) view(c *ui.Context) {
 	a := sw.a
-	k := bpTheme(c)
+	k := bpApply(c, groundChrome, false)
 	t := c.Theme()
 	if sw.isMain {
 		syncMenus(a)
@@ -289,28 +289,29 @@ func (sw *sendWin) view(c *ui.Context) {
 						ui.Box(c).Size(4, 12).Background(t.TextMuted)
 						ui.Text(c, displayName(u)).SingleLine()
 						if u.Absent {
-							ui.Text(c, "!").Bold().TextColor(k.alert).Tooltip(absentTip(u))
+							ui.Text(c, "!").Bold().TextColor(k.alertInk).Tooltip(absentTip(u))
 						}
 					})
 					return
 				}
 				ui.Text(c, cols[col].cell(u)).SingleLine()
-			}).Grow(1).Label("Users").Background(k.field).Border(1, k.edge).Radius(0)
+			}).Grow(1).Label("Users")
+			bpField(c, tbl)
 			tbl.Children(func() {
 				if len(users) == 0 {
 					ui.Text(c, "No one is online").TextColor(t.TextMuted).Padding(12)
 				}
 			})
 
-			ui.Column(c).Width(68).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Column(c).Width(68).Padding(2, 0).AlignItems(ui.Center).Background(k.face).Border(1, k.edge).Children(func() {
+			ui.Column(c).Width(64).Gap(8).AlignItems(ui.Center).Children(func() {
+				bpBevelIn(ui.Column(c).Width(64).Padding(2, 0).AlignItems(ui.Center).Background(k.face).Border(1, k.fieldEdge), k).Children(func() {
 					ui.Text(c, "Member").FontSize(12)
 					ui.Textf(c, "%d", len(users)).Bold().FontSize(14)
 				})
-				if ui.Button(c, "Refresh").Tooltip("Refresh the member list").Clicked() {
+				if bpIconButton(c, iconRefresh, "Refresh member list").Size(36, 30).Clicked() {
 					a.net.Refresh()
 				}
-				ui.Button(c, "▾").Label("Menu").Tooltip("Menu").Menu(func(m *ui.Menu) {
+				bpIconButton(c, iconMenu, "Menu").Size(22, 18).Padding(0).Menu(func(m *ui.Menu) {
 					if m.Item("Sort/Display…").Chosen() {
 						openSortDisplay(a)
 					}
@@ -329,7 +330,7 @@ func (sw *sendWin) view(c *ui.Context) {
 
 		// The message.
 		ui.Column(c).Padding(8).Gap(6).Children(func() {
-			ui.TextArea(c, &sw.text).Label("Message").Height(100).Background(k.field).Border(1, k.edge).Radius(0).
+			bpField(c, ui.TextArea(c, &sw.text).Label("Message").Height(100).Font(bpMonoFont())).
 				OnTextKey(func(key ui.TextKey) bool {
 					if key.Key == ui.KeyEnter && key.Mods == ui.Cmd && a.settings.CtrlEnterSends {
 						sw.text = key.Text()
@@ -343,9 +344,9 @@ func (sw *sendWin) view(c *ui.Context) {
 			if len(sw.attach) > 0 {
 				ui.Row(c).Wrap().Gap(6).Children(func() {
 					for i, at := range sw.attach {
-						ui.Row(c.Key(i)).Gap(4).Padding(1, 2, 1, 6).Background(k.bar).Radius(3).Children(func() {
+						ui.Row(c.Key(i)).Gap(4).Padding(1, 2, 1, 6).Background(k.face).Border(1, k.cellEdge).Children(func() {
 							ui.Textf(c, "%s (%s)", at.Name, sizeText(at.Size)).FontSize(12).SingleLine().MaxWidth(200)
-							ui.Button(c, "×").Label("Remove "+at.Name).Padding(0, 4).OnClick(func() {
+							bpButton(c, "×").Label("Remove "+at.Name).MinWidth(0).Padding(0, 4).OnClick(func() {
 								sw.attach = append(sw.attach[:i:i], sw.attach[i+1:]...)
 							})
 						})
@@ -355,32 +356,32 @@ func (sw *sendWin) view(c *ui.Context) {
 		})
 
 		// The actions.
-		ui.Row(c).Padding(0, 8, 8, 8).Gap(10).Children(func() {
-			if ui.Button(c, "Capture").Tooltip("Screen capture").Clicked() {
+		ui.Row(c).Padding(0, 8, 10, 8).Gap(12).AlignItems(ui.Center).Children(func() {
+			if bpIconButton(c, iconCapture, "Screen capture").Size(30, 26).Clicked() {
 				openCapture(a, func(img core.Attachment) { sw.attach = append(sw.attach, img) })
 			}
-			if ui.Button(c, "Attach…").Tooltip("Attach files").Clicked() {
+			if bpIconButton(c, iconAttach, "Attach files").Size(30, 26).Clicked() {
 				a.desk.openFiles(sw.win, "Attach Files", sw.attachFiles)
 			}
 			ui.Spacer(c)
-			if ui.PrimaryButton(c, "Send").MinWidth(110).Bold().Disabled(len(selected) == 0).Clicked() {
+			if bpBoldButton(c, "Send").MinWidth(120).Disabled(len(selected) == 0).Clicked() {
 				sw.send()
 			}
-			if ui.Checkbox(c, &sw.seal, "Seal").Changed() && !sw.seal {
+			if ui.Checkbox(c, &sw.seal, "seal").Changed() && !sw.seal {
 				sw.lock = false
 			}
-			if ui.Checkbox(c, &sw.lock, "Lock").Tooltip("The receiver enters a password to open it").Changed() && sw.lock {
+			if ui.Checkbox(c, &sw.lock, "lock").Tooltip("The receiver enters a password to open it").Changed() && sw.lock {
 				sw.seal = true
 			}
 			ui.Spacer(c)
 		})
 
 		// The status bar.
-		ui.Row(c).Padding(2, 8).Gap(16).Background(k.bar).Children(func() {
-			ui.Text(c, encryptionText(selected)).FontSize(12)
-			ui.Textf(c, "selected=%d", len(selected)).FontSize(12)
+		bpStatusBar(c, func() {
 			ui.Spacer(c)
-			ui.Textf(c, "TCP %d", a.settings.Port).FontSize(12)
+			ui.Text(c, encryptionText(selected))
+			ui.Textf(c, "selected=%d", len(selected))
+			ui.Textf(c, "TCP %d", a.settings.Port)
 		})
 	})
 

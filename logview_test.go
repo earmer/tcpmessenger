@@ -200,7 +200,7 @@ func TestLogViewerShowsImages(t *testing.T) {
 	lv := newLogViewer(a)
 	lv.selected = 0
 	tt := ui.NewTester(lv.view, 900, 620)
-	if !tt.HasText("📎 a.zip (10 bytes)") {
+	if !tt.HasText("[File] a.zip (10 bytes)") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 	if _, ok := tt.Find("shot.png"); !ok {

@@ -107,7 +107,7 @@ func TestSendSealLockAndCmdEnter(t *testing.T) {
 	if !sw.seal {
 		t.Error("seal is not on by default")
 	}
-	tt.Click("Lock")
+	tt.Click("lock")
 	if !sw.lock || !sw.seal {
 		t.Error("lock does not seal")
 	}
@@ -180,7 +180,7 @@ func TestAttachFiles(t *testing.T) {
 	d.openPaths = []string{p}
 	sw := openSendWindow(a, nil, "")
 	tt := ui.NewTester(sw.view, 460, 430)
-	tt.Click("Attach…")
+	tt.Click("Attach files")
 	if !tt.HasText("notes.txt (5 B)") {
 		t.Fatalf("no chip: %q", tt.Texts())
 	}
@@ -188,7 +188,7 @@ func TestAttachFiles(t *testing.T) {
 	if len(sw.attach) != 0 {
 		t.Fatal("chip not removed")
 	}
-	tt.Click("Attach…")
+	tt.Click("Attach files")
 	tt.Click("Kaga")
 	tt.Click("Send")
 	if len(n.Sent) != 1 || len(n.Sent[0].Attachments) != 1 || string(n.Sent[0].Attachments[0].Data) != "hello" {

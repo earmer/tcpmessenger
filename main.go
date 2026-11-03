@@ -4,13 +4,11 @@ import (
 	"log"
 	"os"
 	"os/user"
-	"runtime"
 	"time"
 
 	"my-app/internal/core"
 
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 )
 
 // appName is the name the app shows in its windows, menus and notifications.
@@ -261,53 +259,6 @@ func (d *headlessDesk) notify(title, body string, _ func()) {
 }
 func (d *headlessDesk) beep()        { d.beeps++ }
 func (d *headlessDesk) native() bool { return false }
-
-// Classic desktop colors, from the Bluepane design tokens.
-var (
-	bpFace      = ui.Hex("#f0f0f0")
-	bpField     = ui.Hex("#ffffff")
-	bpFieldEdge = ui.Hex("#7a7a7a")
-	bpSelect    = ui.Hex("#3d3dd6")
-	bpBar       = ui.Hex("#c8c8c8")
-	bpAlert     = ui.Hex("#c41010")
-	bpMuted     = ui.Hex("#404040")
-	bpHL        = ui.Hex("#0077d4")
-
-	bpFaceDark      = ui.Hex("#262c3c")
-	bpFieldDark     = ui.Hex("#0f1526")
-	bpFieldEdgeDark = ui.Hex("#6b7591")
-	bpBarDark       = ui.Hex("#323a52")
-	bpAlertDark     = ui.Hex("#ff6b6b")
-)
-
-// bpColors are the Bluepane colors for the current appearance.
-type bpColors struct {
-	face, field, edge, bar, alert ui.Color
-}
-
-// bpTheme gives the window the classic look: a grey face, white fields and
-// a blue selection, squarer and more compact than the default.
-func bpTheme(c *ui.Context) bpColors {
-	t := *c.Theme()
-	k := bpColors{bpFace, bpField, bpFieldEdge, bpBar, bpAlert}
-	if t.Dark {
-		k = bpColors{bpFaceDark, bpFieldDark, bpFieldEdgeDark, bpBarDark, bpAlertDark}
-		t.Accent = ui.Hex("#2f6fd0")
-	} else {
-		t.Accent, t.AccentHover, t.AccentPressed = bpSelect, ui.Hex("#3333c4"), ui.Hex("#2a2ab0")
-		t.TextMuted = bpMuted
-		t.Focus = bpHL
-		t.Border = ui.Hex("#adadad")
-	}
-	t.Background = k.face
-	t.Radius = 3
-	t.Spacing = 3
-	if runtime.GOOS == "windows" {
-		t.Font = "Segoe UI"
-	}
-	c.SetTheme(&t)
-	return k
-}
 
 // longTime formats a message's time as the receive window shows it.
 func longTime(t time.Time) string { return t.Format("Mon Jan 02 15:04:05 2006") }
