@@ -502,7 +502,7 @@ func (lv *logViewer) listPane(c *ui.Context, t *ui.Theme) {
 				ui.ButtonBase(c).Label(fmt.Sprintf("Star %d", e.Seq)).Tooltip(label).TextColor(p.muted).OnClick(func() {
 					lv.update(idx, func(e *core.LogEntry) { e.Starred = !e.Starred })
 				}).Children(func() { bpStar(c, e.Starred) })
-				ui.ButtonBase(c).Label(fmt.Sprintf("More %d", e.Seq)).TextColor(p.ink).Menu(func(m *ui.Menu) {
+				ui.ButtonBase(c).Label(fmt.Sprintf("More %d", e.Seq)).TextColor(p.ink).PopoverMenuButton(func(m *ui.Menu) {
 					if m.Item("Mark").Checked(e.Marked).Chosen() {
 						lv.update(idx, func(e *core.LogEntry) { e.Marked = !e.Marked })
 					}

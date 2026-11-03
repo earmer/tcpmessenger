@@ -198,7 +198,7 @@ func bpMenubar(c *ui.Context, menus ...bpMenu) {
 	ui.Row(c).Gap(sp5).Padding(sp1, sp3).Background(p.chrome).Children(func() {
 		for i, m := range menus {
 			b := ui.ButtonBase(c.Key(i)).Label(strings.SplitN(m.Title, "(", 2)[0]).FontSize(12).TextColor(p.ink)
-			b.Menu(m.Build)
+			b.PopoverMenuButton(m.Build)
 			if k := bpAccessKey(m.Title); k != 0 && c.Shortcut(ui.Alt, k) {
 				b.Focus()
 			}
