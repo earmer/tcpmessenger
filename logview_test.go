@@ -71,7 +71,7 @@ func TestLogViewerSearchAndFilters(t *testing.T) {
 
 	st.Update(core.LogEntry{Seq: 2, Starred: true})
 	lv.refresh()
-	if err := tt.Click("★ Starred"); err != nil {
+	if err := tt.Click("Starred"); err != nil {
 		t.Fatal(err)
 	}
 	if len(lv.entries) != 1 || lv.entries[0].Seq != 2 {

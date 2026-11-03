@@ -37,6 +37,7 @@ func main() {
 	})
 	mygo.App.WhenReady(func() {
 		a.desk = &nativeDesk{a: a}
+		nativeWindows = func() bool { return true }
 		openSendWindow(a, nil, "")
 		setupTray(a)
 		startAutoAbsence(a)
@@ -261,7 +262,7 @@ func (d *headlessDesk) beep()        { d.beeps++ }
 func (d *headlessDesk) native() bool { return false }
 
 // longTime formats a message's time as the receive window shows it.
-func longTime(t time.Time) string { return t.Format("Mon Jan 02 15:04:05 2006") }
+func longTime(t time.Time) string { return t.Format("2006/01/02 (Mon) 15:04:05") }
 
 // fakeBackends are the demo backends of TCPMSG_FAKE=1.
 func fakeBackends() (core.Messenger, core.Store) {

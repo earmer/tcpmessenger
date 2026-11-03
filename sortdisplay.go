@@ -64,9 +64,9 @@ func (sd *sortDisplayView) view(c *ui.Context) {
 			ch = true
 		}
 	}
-	ui.Column(c).Fill().Padding(12).Gap(12).Children(func() {
-		auxGroup(c, "UserList Display option", func() {
-			ui.Grid(c).Columns(3).Gap(6).Children(func() {
+	ui.Column(c).Fill().Padding(sp3).Gap(sp4).Children(func() {
+		auxGroup(c, "User List Display Options", func() {
+			ui.Grid(c).Columns(3).Gap(sp4).Children(func() {
 				check(&l.ShowGroup, "Group")
 				check(&l.ShowHost, "Host")
 				check(&l.ShowPriority, "DispPriority")
@@ -75,30 +75,32 @@ func (sd *sortDisplayView) view(c *ui.Context) {
 				check(&l.GridLines, "GridLines")
 			})
 		})
-		auxGroup(c, "Broad-level User Sort Settings", func() {
-			auxGroup(c, "First sort key (if Group is set)", func() {
+		auxGroup(c, "User Sort Settings", func() {
+			auxGroup(c, "First Sort Key", func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					check(&l.SortByGroup, "Group name")
 					ui.Spacer(c)
-					if ui.Toggle(c, &l.GroupReverse, "reverse").Label("Reverse group order").Disabled(!l.SortByGroup).Changed() {
+					if ui.Checkbox(c, &l.GroupReverse, "Reverse").Label("Reverse group order").Disabled(!l.SortByGroup).Changed() {
 						ch = true
 					}
 				})
 			})
-			auxGroup(c, "Second sort key", func() {
+			auxGroup(c, "Second Sort Key", func() {
 				ui.Row(c).Gap(8).AlignItems(ui.End).Children(func() {
 					second := l.Second
-					ui.RadioGroup(c, func() {
-						ui.Radio(c, &second, core.SortByName, "User name")
-						ui.Radio(c, &second, core.SortByIP, "IP address")
-						ui.Radio(c, &second, core.SortByHost, "Host name")
-					}).Gap(6).Label("Second sort key")
+					bpRadios(c, func() {
+						ui.RadioGroup(c, func() {
+							ui.Radio(c, &second, core.SortByName, "User name")
+							ui.Radio(c, &second, core.SortByIP, "IP address")
+							ui.Radio(c, &second, core.SortByHost, "Host name")
+						}).Gap(sp4).Label("Second sort key")
+					})
 					if second != l.Second {
 						l.Second = second
 						ch = true
 					}
 					ui.Spacer(c)
-					if ui.Toggle(c, &l.SecondReverse, "reverse").Label("Reverse second order").Changed() {
+					if ui.Checkbox(c, &l.SecondReverse, "Reverse").Label("Reverse second order").Changed() {
 						ch = true
 					}
 				})
@@ -106,8 +108,8 @@ func (sd *sortDisplayView) view(c *ui.Context) {
 			check(&l.IgnoreCase, "Ignore case (ASCII)")
 		})
 		ui.Spacer(c)
-		ui.Row(c).Justify(ui.Center).Children(func() {
-			if bpDlgButton(c, "OK", true).Width(90).Clicked() {
+		ui.Row(c).Justify(ui.End).Children(func() {
+			if bpDlgButton(c, "OK", true).Clicked() {
 				sd.close()
 			}
 		})

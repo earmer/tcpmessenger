@@ -27,6 +27,7 @@ type sendWin struct {
 
 	list   ui.ListState
 	chosen ui.Selection[string] // user IDs
+	group  string               // the group filter, or sendAllGroups
 	extra  []core.User          // recipients preselected but not among the peers
 	users  []core.User          // the rows of the last frame, sorted
 
@@ -96,7 +97,7 @@ func openSendWindow(a *tcpApp, to []core.User, text string) *sendWin {
 }
 
 func newSendWin(a *tcpApp, to []core.User, text string) *sendWin {
-	sw := &sendWin{a: a, text: text, seal: a.settings.SealByDefault}
+	sw := &sendWin{a: a, text: text, seal: a.settings.SealByDefault, group: sendAllGroups}
 	for _, u := range to {
 		sw.chosen.Add(u.ID)
 		if !hasUser(a.peers, u.ID) {
@@ -225,28 +226,65 @@ func compareIP(a, b string) int {
 
 // sendColumn is a column of the user list.
 type sendColumn struct {
-	col  ui.TableColumn
+	col  bpCol
 	cell func(u core.User) string
 }
 
 func sendColumns(o core.ListOptions) []sendColumn {
-	cols := []sendColumn{{ui.TableColumn{Title: "User", MinWidth: 80}, nil}}
+	cols := []sendColumn{{bpCol{Title: "User"}, nil}}
 	if o.ShowGroup {
-		cols = append(cols, sendColumn{ui.TableColumn{Title: "Group", Width: 80}, func(u core.User) string { return u.Group }})
+		cols = append(cols, sendColumn{bpCol{Title: "Group", Width: 80}, func(u core.User) string { return u.Group }})
 	}
 	if o.ShowHost {
-		cols = append(cols, sendColumn{ui.TableColumn{Title: "Host", Width: 70}, func(u core.User) string { return u.Host }})
+		cols = append(cols, sendColumn{bpCol{Title: "Host", Width: 70}, func(u core.User) string { return u.Host }})
 	}
 	if o.ShowLogon {
-		cols = append(cols, sendColumn{ui.TableColumn{Title: "Logon", Width: 70}, func(u core.User) string { return u.Logon }})
+		cols = append(cols, sendColumn{bpCol{Title: "Logon", Width: 70}, func(u core.User) string { return u.Logon }})
 	}
 	if o.ShowIP {
-		cols = append(cols, sendColumn{ui.TableColumn{Title: "IP", Width: 100}, userIP})
+		cols = append(cols, sendColumn{bpCol{Title: "IP", Width: 100}, userIP})
 	}
 	if o.ShowPriority {
-		cols = append(cols, sendColumn{ui.TableColumn{Title: "Priority", Width: 56, Align: ui.End}, func(u core.User) string { return fmt.Sprint(u.Priority) }})
+		cols = append(cols, sendColumn{bpCol{Title: "Priority", Width: 56, Align: ui.End}, func(u core.User) string { return fmt.Sprint(u.Priority) }})
 	}
 	return cols
+}
+
+const sendAllGroups = "All Groups"
+
+// sendGroups are the groups of the users, sorted, for the group filter.
+func sendGroups(us []core.User) []string {
+	var out []string
+	for _, u := range us {
+		if u.Group != "" && !hasString(out, u.Group) {
+			out = append(out, u.Group)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func hasString(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// sendFilterGroup keeps the users of group, all of them for sendAllGroups.
+func sendFilterGroup(us []core.User, group string) []core.User {
+	if group == sendAllGroups || group == "" {
+		return us
+	}
+	var out []core.User
+	for _, u := range us {
+		if u.Group == group {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // selectedUsers are the chosen users the list shows, in its order.
@@ -267,26 +305,91 @@ func (sw *sendWin) view(c *ui.Context) {
 	if sw.isMain {
 		syncMenus(a)
 	}
-	sw.users = sendListUsers(a.peers, sw.extra, a.settings.List)
+	all := sendListUsers(a.peers, sw.extra, a.settings.List)
+	groups := sendGroups(all)
+	if sw.group != sendAllGroups && !hasString(groups, sw.group) {
+		sw.group = sendAllGroups
+	}
+	sw.users = sendFilterGroup(all, sw.group)
 	users := sw.users
 	selected := sw.selectedUsers()
+	attach := func() { a.desk.openFiles(sw.win, "Attach Files", sw.attachFiles) }
+	capture := func() { openCapture(a, func(img core.Attachment) { sw.attach = append(sw.attach, img) }) }
 
 	ui.Column(c).Fill().Children(func() {
-		// The user list, and the member count beside it.
-		ui.Row(c).Grow(1).MinHeight(110).Padding(8, 8, 0, 8).Gap(8).AlignItems(ui.Stretch).Children(func() {
+		bpMenubar(c,
+			bpMenu{"File(F)", func(m *ui.Menu) {
+				if m.Item("Attach Files…").Chosen() {
+					attach()
+				}
+				if m.Item("Screen Capture…").Chosen() {
+					capture()
+				}
+				m.Separator()
+				if m.Item("Close").Chosen() {
+					sw.close()
+				}
+			}},
+			bpMenu{"Settings(S)", func(m *ui.Menu) {
+				if m.Item("Settings…").Chosen() {
+					openSettings(a)
+				}
+				if m.Item("Sort/Display…").Chosen() {
+					openSortDisplay(a)
+				}
+				if m.Item("Absence…").Chosen() {
+					openAbsence(a)
+				}
+			}},
+			bpMenu{"Window(W)", func(m *ui.Menu) {
+				if m.Item("Log Viewer").Chosen() {
+					openLogViewer(a)
+				}
+				if m.Item("Refresh Members").Chosen() {
+					a.net.Refresh()
+				}
+			}},
+			bpMenu{"Help(H)", func(m *ui.Menu) {
+				if m.Item(appName + " Help").Chosen() {
+					openHelp("send")
+				}
+				if m.Item("About " + appName).Chosen() {
+					showAbout()
+				}
+			}},
+		)
+
+		bpToolbar(c, func() {
+			if bpIconButton(c, iconRefresh, "Refresh member list").Clicked() {
+				a.net.Refresh()
+			}
+			bpSep(c)
+			if bpIconButton(c, iconAttach, "Attach files").Clicked() {
+				attach()
+			}
+			if bpIconButton(c, iconCapture, "Screen capture").Clicked() {
+				capture()
+			}
+			bpSep(c)
+			ui.Select(c, &sw.group, append([]string{sendAllGroups}, groups...)).Label("Group filter").Width(140).FontSize(13)
+			ui.Spacer(c)
+			bpLabel(c, fmt.Sprintf("Users %d", len(users)))
+		})
+
+		// The user list.
+		ui.Column(c).Grow(1).MinHeight(110).Padding(sp3).Children(func() {
 			cols := sendColumns(a.settings.List)
-			tcols := make([]ui.TableColumn, len(cols))
+			bcols := make([]bpCol, len(cols))
 			for i := range cols {
-				tcols[i] = cols[i].col
+				bcols[i] = cols[i].col
 			}
 			sw.list.Key = func(i int) any { return users[i].ID }
 			sw.list.Label = func(i int) string { return users[i].Name }
 			sw.list.Selection = &sw.chosen
-			tbl := ui.Table(c, &sw.list, tcols, len(users), func(row, col int) {
+			bpList(c, &sw.list, bcols, len(users), func(row, col int) {
 				u := users[row]
 				if col == 0 {
-					ui.Row(c).Gap(4).Children(func() {
-						ui.Box(c).Size(4, 12).Background(t.TextMuted)
+					ui.Row(c).Gap(sp2).Children(func() {
 						ui.Text(c, displayName(u)).SingleLine()
 						if u.Absent {
 							ui.Text(c, "!").Bold().TextColor(k.alertInk).Tooltip(absentTip(u))
@@ -295,42 +398,16 @@ func (sw *sendWin) view(c *ui.Context) {
 					return
 				}
 				ui.Text(c, cols[col].cell(u)).SingleLine()
-			}).Grow(1).Label("Users")
-			bpField(c, tbl)
-			tbl.Children(func() {
+			}).Grow(1).Label("Users").Children(func() {
 				if len(users) == 0 {
-					ui.Text(c, "No one is online").TextColor(t.TextMuted).Padding(12)
+					ui.Text(c, "No one is online").TextColor(t.TextMuted).Padding(sp4)
 				}
-			})
-
-			ui.Column(c).Width(64).Gap(8).AlignItems(ui.Center).Children(func() {
-				bpBevelIn(ui.Column(c).Width(64).Padding(2, 0).AlignItems(ui.Center).Background(k.face).Border(1, k.fieldEdge), k).Children(func() {
-					ui.Text(c, "Member").FontSize(12)
-					ui.Textf(c, "%d", len(users)).Bold().FontSize(14)
-				})
-				if bpIconButton(c, iconRefresh, "Refresh member list").Size(36, 30).Clicked() {
-					a.net.Refresh()
-				}
-				bpIconButton(c, iconMenu, "Menu").Size(22, 18).Padding(0).Menu(func(m *ui.Menu) {
-					if m.Item("Sort/Display…").Chosen() {
-						openSortDisplay(a)
-					}
-					if m.Item("Settings…").Chosen() {
-						openSettings(a)
-					}
-					if m.Item("Absence…").Chosen() {
-						openAbsence(a)
-					}
-					if m.Item("Log viewer").Chosen() {
-						openLogViewer(a)
-					}
-				})
 			})
 		})
 
 		// The message.
-		ui.Column(c).Padding(8).Gap(6).Children(func() {
-			bpField(c, ui.TextArea(c, &sw.text).Label("Message").Height(100).Font(bpMonoFont())).
+		ui.Column(c).Padding(0, sp3, sp3, sp3).Gap(sp2).Children(func() {
+			bpField(c, ui.TextArea(c, &sw.text).Label("Message").Height(100).Font(bpMonoFont()).FontSize(13)).
 				OnTextKey(func(key ui.TextKey) bool {
 					if key.Key == ui.KeyEnter && key.Mods == ui.Cmd && a.settings.CtrlEnterSends {
 						sw.text = key.Text()
@@ -342,13 +419,14 @@ func (sw *sendWin) view(c *ui.Context) {
 					return false
 				})
 			if len(sw.attach) > 0 {
-				ui.Row(c).Wrap().Gap(6).Children(func() {
+				ui.Row(c).Wrap().Gap(sp2).Children(func() {
 					for i, at := range sw.attach {
-						ui.Row(c.Key(i)).Gap(4).Padding(1, 2, 1, 6).Background(k.face).Border(1, k.cellEdge).Children(func() {
-							ui.Textf(c, "%s (%s)", at.Name, sizeText(at.Size)).FontSize(12).SingleLine().MaxWidth(200)
-							bpButton(c, "×").Label("Remove "+at.Name).MinWidth(0).Padding(0, 4).OnClick(func() {
+						bpBevelOut(ui.Row(c.Key(i)).Gap(sp2).Padding(sp1, sp1, sp1, sp3).AlignItems(ui.Center).
+							Background(k.face).Border(1, k.fieldEdge), k).Children(func() {
+							ui.Textf(c, "%s (%s)", at.Name, sizeText(at.Size)).FontSize(12).Bold().SingleLine().MaxWidth(200)
+							ui.ButtonBase(c).Label("Remove "+at.Name).Padding(0, sp1).TextColor(k.muted).OnClick(func() {
 								sw.attach = append(sw.attach[:i:i], sw.attach[i+1:]...)
-							})
+							}).Children(func() { ui.Text(c, "✕").FontSize(11) })
 						})
 					}
 				})
@@ -356,32 +434,23 @@ func (sw *sendWin) view(c *ui.Context) {
 		})
 
 		// The actions.
-		ui.Row(c).Padding(0, 8, 10, 8).Gap(12).AlignItems(ui.Center).Children(func() {
-			if bpIconButton(c, iconCapture, "Screen capture").Size(30, 26).Clicked() {
-				openCapture(a, func(img core.Attachment) { sw.attach = append(sw.attach, img) })
-			}
-			if bpIconButton(c, iconAttach, "Attach files").Size(30, 26).Clicked() {
-				a.desk.openFiles(sw.win, "Attach Files", sw.attachFiles)
-			}
-			ui.Spacer(c)
-			if bpBoldButton(c, "Send").MinWidth(120).Disabled(len(selected) == 0).Clicked() {
+		ui.Row(c).Padding(0, sp3, sp3, sp3).Gap(sp3).AlignItems(ui.Center).Children(func() {
+			if bpButton(c, "Send").Grow(1).Disabled(len(selected) == 0).Clicked() {
 				sw.send()
 			}
-			if ui.Checkbox(c, &sw.seal, "seal").Changed() && !sw.seal {
+			if ui.Checkbox(c, &sw.seal, "Seal").Changed() && !sw.seal {
 				sw.lock = false
 			}
-			if ui.Checkbox(c, &sw.lock, "lock").Tooltip("The receiver enters a password to open it").Changed() && sw.lock {
+			if ui.Checkbox(c, &sw.lock, "Lock").Tooltip("The receiver enters a password to open it").Changed() && sw.lock {
 				sw.seal = true
 			}
-			ui.Spacer(c)
 		})
 
-		// The status bar.
 		bpStatusBar(c, func() {
-			ui.Spacer(c)
 			ui.Text(c, encryptionText(selected))
-			ui.Textf(c, "selected=%d", len(selected))
-			ui.Textf(c, "TCP %d", a.settings.Port)
+			ui.Textf(c, "sel=%d", len(selected))
+			ui.Textf(c, "total=%d", len(all))
+			ui.Textf(c, "port=%d", a.settings.Port)
 		})
 	})
 

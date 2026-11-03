@@ -35,16 +35,26 @@ func TestSnapshots(t *testing.T) {
 		{"receive", (&recvWin{a: a, m: msg, opened: true, quote: true}).view, 480, 400},
 		{"logview", lv.view, 760, 560},
 		{"settings", newSettingsView(a).view, 760, 600},
-		{"absence", newAbsenceView(a).view, 520, 480},
+		{"absence", newAbsenceView(a).view, 540, 560},
+		{"help", helpView, 680, 900},
+		{"sort", (&sortDisplayView{a: a, close: func() {}}).view, 460, 480},
 	}
 	for _, s := range shots {
-		tt := ui.NewTester(s.view, s.w, s.h)
-		tt.Frame()
-		f, err := os.Create(filepath.Join(dir, s.name+".png"))
-		if err != nil {
-			t.Fatal(err)
+		for _, dark := range []bool{false, true} {
+			tt := ui.NewTester(s.view, s.w, s.h)
+			tt.SetDark(dark)
+			tt.Frame()
+			tt.Frame()
+			name := s.name
+			if dark {
+				name += "-dark"
+			}
+			f, err := os.Create(filepath.Join(dir, name+".png"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			png.Encode(f, tt.Image())
+			f.Close()
 		}
-		png.Encode(f, tt.Image())
-		f.Close()
 	}
 }

@@ -51,7 +51,7 @@ func TestSendWindowSelectAndSend(t *testing.T) {
 	sw := openSendWindow(a, nil, "")
 	tt := ui.NewTester(sw.view, 460, 430)
 
-	for _, s := range []string{"Kaga", "Oda", "tanabe", "!", "Member", "3", "selected=0", "TCP 2425"} {
+	for _, s := range []string{"Kaga", "Oda", "tanabe", "!", "Users 3", "sel=0", "port=2425"} {
 		if !tt.HasText(s) {
 			t.Errorf("no %q in %q", s, tt.Texts())
 		}
@@ -71,7 +71,7 @@ func TestSendWindowSelectAndSend(t *testing.T) {
 	if err := tt.ClickWith(ui.Cmd, "tanabe"); err != nil {
 		t.Fatal(err)
 	}
-	if !tt.HasText("selected=2") {
+	if !tt.HasText("sel=2") {
 		t.Fatalf("texts %q after choosing two", tt.Texts())
 	}
 	tt.Click("Message")
@@ -107,7 +107,7 @@ func TestSendSealLockAndCmdEnter(t *testing.T) {
 	if !sw.seal {
 		t.Error("seal is not on by default")
 	}
-	tt.Click("lock")
+	tt.Click("Lock")
 	if !sw.lock || !sw.seal {
 		t.Error("lock does not seal")
 	}
@@ -161,7 +161,7 @@ func TestReplyWindowClosesAfterSend(t *testing.T) {
 		t.Fatal("reply window is the main one")
 	}
 	tt := ui.NewTester(sw.view, 460, 430)
-	if !tt.HasText("Stranger") || !tt.HasText("selected=1") {
+	if !tt.HasText("Stranger") || !tt.HasText("sel=1") {
 		t.Fatalf("preselected recipient missing: %q", tt.Texts())
 	}
 	tt.Click("Send")
@@ -206,8 +206,10 @@ func TestListColumnsAndSortSettings(t *testing.T) {
 			t.Errorf("no %q in %q", s, tt.Texts())
 		}
 	}
-	if tt.HasText("Group") {
-		t.Error("group column shows")
+	for _, col := range sendColumns(a.settings.List) {
+		if col.col.Title == "Group" {
+			t.Error("group column shows")
+		}
 	}
 	if got := names(sw.users); !slices.Equal(got, []string{"tanabe", "Oda", "Kaga"}) {
 		t.Errorf("order %v", got)

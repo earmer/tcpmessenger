@@ -385,11 +385,16 @@ func (lv *logViewer) bitmap(e core.LogEntry, i int) *ui.Bitmap {
 }
 
 func (lv *logViewer) view(c *ui.Context) {
-	t := applyAuxTheme(c)
+	k := bpApply(c, groundChrome, false)
+	t := c.Theme()
 	ui.Column(c).Fill().Children(func() {
+		lv.menubar(c)
 		lv.toolbar(c, t)
 		ui.Split(c, &lv.split, func() { lv.listPane(c, t) }, func() { lv.detailPane(c, t) }).Grow(1)
-		auxStatusBar(c, t, func() {
+		bpStatusBar(c, func() {
+			if lv.status != "" {
+				ui.Text(c, lv.status).Grow(1).MaxLines(1).TextColor(k.muted)
+			}
 			pos := 0
 			if lv.selected >= 0 {
 				pos = lv.selected + 1
@@ -397,9 +402,6 @@ func (lv *logViewer) view(c *ui.Context) {
 			ui.Textf(c, "pos=%d", pos)
 			ui.Textf(c, "find=%d", len(lv.entries))
 			ui.Textf(c, "total=%d", lv.total)
-			if lv.status != "" {
-				ui.Text(c, lv.status).Grow(1).MaxLines(1).TextColor(t.TextMuted)
-			}
 		})
 	})
 	switch ui.AlertDialog(c, &lv.confirmDelete, "Delete this message?", "It is removed from the log. You can't undo this.", "Cancel", "Delete") {
@@ -408,18 +410,62 @@ func (lv *logViewer) view(c *ui.Context) {
 	}
 }
 
+func (lv *logViewer) menubar(c *ui.Context) {
+	e, ok := lv.current()
+	filter := func(m *ui.Menu, on *bool, label string) {
+		if m.Item(label).Checked(*on).Chosen() {
+			*on = !*on
+			lv.refresh()
+		}
+	}
+	bpMenubar(c,
+		bpMenu{"File(F)", func(m *ui.Menu) {
+			if m.Item("Export…").Chosen() {
+				lv.export()
+			}
+		}},
+		bpMenu{"Edit(E)", func(m *ui.Menu) {
+			if m.Item("Copy").Disabled(!ok).Chosen() {
+				c.WriteClipboard(e.Text)
+				lv.status = "Copied."
+			}
+			if m.Item("Reply").Disabled(!ok).Chosen() {
+				lv.reply(lvCounterpart(e), lvQuote(lv.a.settings, e.Text))
+			}
+			m.Separator()
+			if m.Item("Delete…").Disabled(!ok).Chosen() {
+				lv.confirmDelete = true
+			}
+		}},
+		bpMenu{"View(V)", func(m *ui.Menu) {
+			filter(m, &lv.starred, "Starred Only")
+			filter(m, &lv.marked, "Marked Only")
+			filter(m, &lv.withImages, "With Images")
+			filter(m, &lv.withFiles, "With Files")
+		}},
+		bpMenu{"Help(H)", func(m *ui.Menu) {
+			if m.Item(appName + " Help").Chosen() {
+				openHelp("log")
+			}
+		}},
+	)
+}
+
 func (lv *logViewer) toolbar(c *ui.Context, t *ui.Theme) {
-	p := bpOf(c)
-	ui.Row(c).Gap(4).Padding(4, 8).AlignItems(ui.Center).Background(p.face).
-		BorderWidth(1, 0, 1, 0).BorderColor(p.cellEdge).Children(func() {
+	bpToolbar(c, func() {
 		changed := false
-		changed = bpToggle(c, &lv.starred, "★ Starred").Tooltip("Favorites only").Changed() || changed
+		changed = bpToggleWith(c, &lv.starred, "Starred", func() {
+			bpStar(c, lv.starred)
+			ui.Text(c, "Starred").SingleLine()
+		}).Tooltip("Favorites only").Changed() || changed
 		changed = bpToggle(c, &lv.marked, "Marked").Tooltip("Marked messages").Changed() || changed
 		changed = bpToggle(c, &lv.withImages, "Images").Tooltip("Messages with images").Changed() || changed
 		changed = bpToggle(c, &lv.withFiles, "Files").Tooltip("Messages with attachments").Changed() || changed
+		bpSep(c)
 		changed = ui.Select(c, &lv.user, lv.userLabels).Label("User filter").Width(150).Changed() || changed
 		ui.Spacer(c)
 		changed = bpField(c, ui.SearchField(c, &lv.query).Label("Search").Width(180)).Changed() || changed
+		bpSep(c)
 		if bpButton(c, "Export…").Tooltip("Export the messages shown to a text file").Clicked() {
 			lv.export()
 		}
@@ -435,39 +481,51 @@ func (lv *logViewer) listPane(c *ui.Context, t *ui.Theme) {
 	ui.List(c, &lv.list, len(lv.entries), func(i int) {
 		e := lv.entries[i]
 		ui.Column(c).Children(func() {
-			// The head: time, direction and who, on the grey bar.
-			ui.Row(c).Gap(8).Padding(2, 8).AlignItems(ui.Center).Background(p.bar).TextColor(p.ink).Children(func() {
+			// The head: time and direction, who, and the tools, on the
+			// grey bar.
+			ui.Row(c).Gap(sp3).Padding(sp1, sp3).AlignItems(ui.Center).Background(p.bar).TextColor(p.ink).Children(func() {
 				arrow := "⇨"
 				if e.Incoming {
 					arrow = "⇦"
 				}
-				ui.Text(c, lvTime(e.Time, now)+" "+arrow)
-				bpChip(c, lvWho(e)).MaxLines(1)
+				ui.Text(c, lvTime(e.Time, now)+" "+arrow).SingleLine()
+				bpChip(c, lvWho(e)).Shrink(1)
 				ui.Spacer(c)
-				if e.Marked {
-					ui.Box(c).Size(12, 8).Background(lvMarkColor)
-				}
-				star := "☆"
-				if e.Starred {
-					star = "★"
+				if len(e.Attachments) > 0 {
+					ui.Textf(c, "files=%d", len(e.Attachments)).FontSize(12).Font(bpMonoFont())
 				}
 				idx := i
-				ui.ButtonBase(c).Label(fmt.Sprintf("Star %d", e.Seq)).TextColor(p.star).Padding(0, 2).OnClick(func() {
+				label := "Star"
+				if e.Starred {
+					label = "Unstar"
+				}
+				ui.ButtonBase(c).Label(fmt.Sprintf("Star %d", e.Seq)).Tooltip(label).TextColor(p.muted).OnClick(func() {
 					lv.update(idx, func(e *core.LogEntry) { e.Starred = !e.Starred })
-				}).Children(func() { ui.Text(c, star) })
+				}).Children(func() { bpStar(c, e.Starred) })
+				ui.ButtonBase(c).Label(fmt.Sprintf("More %d", e.Seq)).TextColor(p.ink).Menu(func(m *ui.Menu) {
+					if m.Item("Mark").Checked(e.Marked).Chosen() {
+						lv.update(idx, func(e *core.LogEntry) { e.Marked = !e.Marked })
+					}
+					if m.Item("Reply").Chosen() {
+						lv.reply(lvCounterpart(e), lvQuote(lv.a.settings, e.Text))
+					}
+					if m.Item("Copy").Chosen() {
+						c.WriteClipboard(e.Text)
+						lv.status = "Copied."
+					}
+				}).Children(func() { ui.Icon(c, iconMore).Size(14, 14) })
 			})
 			// The body.
-			ui.Column(c).Padding(6, 8, 10, 8).Gap(4).Children(func() {
-				ui.Text(c, lvPreview(e.Text)).MaxLines(3)
+			ui.Column(c).Padding(sp3, sp3, sp4, sp3).Gap(sp1).Children(func() {
+				ui.RichText(c, bpHighlight(c, lvPreview(e.Text), lv.query, e.Marked)...).MaxLines(3)
 				if e.Note != "" {
-					ui.Text(c, "Ref: "+e.Note).MaxLines(1).Padding(2, 8).
-						Background(lvNoteColor(c)).Border(1, lvNoteEdge(c)).Radius(3)
+					bpNote(c, "Ref.: "+e.Note).MaxLines(1).Margin(sp3, 0, 0, 0)
 				}
 			})
 		})
 	}).Fill().Background(p.chrome).Children(func() {
 		if len(lv.entries) == 0 {
-			ui.Text(c, "No messages").TextColor(t.TextMuted).Padding(12)
+			ui.Text(c, "No messages").TextColor(t.TextMuted).Padding(sp4)
 		}
 	})
 	lv.syncNote()
@@ -475,34 +533,24 @@ func (lv *logViewer) listPane(c *ui.Context, t *ui.Theme) {
 
 func (lv *logViewer) detailPane(c *ui.Context, t *ui.Theme) {
 	e, ok := lv.current()
-	ui.Column(c).Fill().Padding(10).Gap(8).Children(func() {
+	p := bpOf(c)
+	ui.Column(c).Fill().Padding(sp3).Gap(sp3).Background(p.chrome).Children(func() {
 		if !ok {
 			ui.Text(c, "Choose a message to read it.").TextColor(t.TextMuted)
 			return
 		}
 		i := lv.selected
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(sp3).AlignItems(ui.Center).Children(func() {
 			dir := "To"
 			if e.Incoming {
 				dir = "From"
 			}
-			ui.Text(c, dir+": "+lvWho(e)).Bold().Grow(1).MaxLines(2)
-			ui.Text(c, e.Time.Format("2006/01/02 (Mon) 15:04:05")).TextColor(t.TextMuted)
+			bpLabel(c, dir)
+			bpChip(c, lvWho(e)).Shrink(1)
+			ui.Spacer(c)
+			ui.Text(c, e.Time.Format("2006/01/02 (Mon) 15:04:05")).Font(bpMonoFont()).TextColor(t.TextMuted).SingleLine()
 		})
-		var flags []string
-		if e.Sealed {
-			flags = append(flags, "Sealed")
-		}
-		if e.Locked {
-			flags = append(flags, "Locked")
-		}
-		if e.Signed {
-			flags = append(flags, "Signed")
-		}
-		if len(flags) > 0 {
-			ui.Text(c, strings.Join(flags, ", ")).FontSize(12).TextColor(t.TextMuted)
-		}
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(sp3).AlignItems(ui.Center).Children(func() {
 			starred, marked := e.Starred, e.Marked
 			if ui.Checkbox(c, &starred, "Favorite").Changed() {
 				lv.update(i, func(e *core.LogEntry) { e.Starred = starred })
@@ -510,8 +558,16 @@ func (lv *logViewer) detailPane(c *ui.Context, t *ui.Theme) {
 			if ui.Checkbox(c, &marked, "Mark").Changed() {
 				lv.update(i, func(e *core.LogEntry) { e.Marked = marked })
 			}
+			for _, f := range []struct {
+				on   bool
+				name string
+			}{{e.Sealed, "sealed"}, {e.Locked, "locked"}, {e.Signed, "signed"}} {
+				if f.on {
+					ui.Text(c.Key(f.name), f.name).Font(bpMonoFont()).TextColor(t.TextMuted)
+				}
+			}
 			ui.Spacer(c)
-			if bpBoldButton(c, "Reply").Clicked() {
+			if bpButton(c, "Reply").Clicked() {
 				lv.reply(lvCounterpart(e), lvQuote(lv.a.settings, e.Text))
 			}
 			if bpButton(c, "Copy").Clicked() {
@@ -522,21 +578,25 @@ func (lv *logViewer) detailPane(c *ui.Context, t *ui.Theme) {
 				lv.confirmDelete = true
 			}
 		})
-		bpField(c, ui.Scroll(c).Grow(1).Padding(8).Gap(8)).Children(func() {
-			ui.Text(c, e.Text).Selectable().Wrap()
-			for ai, at := range e.Attachments {
-				if at.IsImage && len(at.Data) > 0 {
-					if b := lv.bitmap(e, ai); b != nil {
-						ui.Image(c, b).MaxWidth(480).MaxHeight(360).Fit(ui.Contain).Label(at.Name)
-						continue
+		bpField(c, ui.Scroll(c).Grow(1)).Children(func() {
+			ui.Column(c).Padding(sp3).Gap(sp3).Children(func() {
+				ui.RichText(c, bpHighlight(c, e.Text, lv.query, e.Marked)...).Selectable().Wrap()
+				for ai, at := range e.Attachments {
+					if at.IsImage && len(at.Data) > 0 {
+						if b := lv.bitmap(e, ai); b != nil {
+							ui.Image(c, b).MaxWidth(480).MaxHeight(360).Fit(ui.Contain).Label(at.Name)
+							continue
+						}
 					}
+					ui.Text(c, fmt.Sprintf("[File] %s (%d bytes)", at.Name, at.Size)).TextColor(t.TextMuted)
 				}
-				ui.Text(c, fmt.Sprintf("[File] %s (%d bytes)", at.Name, at.Size)).TextColor(t.TextMuted)
-			}
+				if e.Note != "" {
+					bpNote(c, "Ref.: "+e.Note)
+				}
+			})
 		})
-		ui.Field(c, "Note", func() {
-			ui.TextArea(c, &lv.note).Lines(2, 4).Placeholder("Add a note")
-		})
+		bpLabel(c, "Note")
+		bpField(c, ui.TextArea(c, &lv.note).Lines(2, 4).Placeholder("Add a note").Label("Note"))
 		ui.Row(c).Justify(ui.End).Children(func() {
 			if bpButton(c, "Save Note").Disabled(lv.note == e.Note).Clicked() {
 				note := lv.note
@@ -545,20 +605,4 @@ func (lv *logViewer) detailPane(c *ui.Context, t *ui.Theme) {
 			}
 		})
 	})
-}
-
-// lvNoteColor and lvNoteEdge color a note as the reference note
-// (bp-note): --note on a --promo-edge frame.
-func lvNoteColor(c *ui.Context) ui.Color {
-	if c.Theme().Dark {
-		return ui.Hex("#132a1a")
-	}
-	return ui.Hex("#e8fbe8")
-}
-
-func lvNoteEdge(c *ui.Context) ui.Color {
-	if c.Theme().Dark {
-		return ui.Hex("#3f8f4a")
-	}
-	return ui.Hex("#8fd88f")
 }

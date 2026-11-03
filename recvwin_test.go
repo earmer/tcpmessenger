@@ -19,7 +19,7 @@ func TestReceivePlain(t *testing.T) {
 	}
 	rw := a.recvWins[0]
 	tt := ui.NewTester(rw.view, 420, 380)
-	for _, s := range []string{"Message from...", "Kaga (Tech/H24)", "Hello there"} {
+	for _, s := range []string{"Kaga", "Tech/H24", "Hello there"} {
 		if !tt.HasText(s) {
 			t.Errorf("no %q in %q", s, tt.Texts())
 		}

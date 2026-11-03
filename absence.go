@@ -118,16 +118,17 @@ func (av *absenceView) statusLine() string {
 }
 
 func (av *absenceView) view(c *ui.Context) {
-	t := applyAuxTheme(c)
-	ui.Column(c).Fill().Children(func() {
-		ui.Column(c).Grow(1).Padding(12).Gap(12).Children(func() {
-			bpInfo(c, `Absent users show "!" in other members' lists. Their absence message is sent back to whoever messages them.`).FontSize(14)
-			ui.Row(c).Gap(12).AlignItems(ui.Stretch).Children(func() {
-				ui.Column(c).Width(170).Gap(6).Children(func() {
-					ui.List(c, &av.list, len(av.modes), func(i int) {
-						ui.Textf(c, "%d: %s", i+1, av.modes[i].Title).Padding(1, 4).FontSize(14).MaxLines(1)
-					}).Height(170).Background(t.Surface).Border(1, t.Border).Label("Absence modes")
-					ui.Row(c).Gap(4).Children(func() {
+	applyAuxTheme(c)
+	ui.Column(c).Fill().Padding(sp3).Gap(sp4).Children(func() {
+		bpGroup(c, "Absence Mode", func() {
+			bpLead(c, `Absent users show "!" in other members' lists. Their absence message is sent back to whoever messages them.`, "absence")
+			auxLabeled(c, "Current state", 110, func() { bpReadonly(c, av.statusLine(), 0).Grow(1) })
+			ui.Row(c).Gap(sp4).AlignItems(ui.Stretch).Children(func() {
+				ui.Column(c).Width(170).Shrink(0).Gap(sp2).Children(func() {
+					bpCatList(c, &av.list, len(av.modes), func(i int) string {
+						return fmt.Sprintf("%d: %s", i+1, av.modes[i].Title)
+					}).Height(150).Label("Absence modes")
+					ui.Row(c).Gap(sp2).Children(func() {
 						if bpMiniButton(c, "Add").Grow(1).Clicked() {
 							av.modes = append(av.modes, core.AbsenceMode{Title: fmt.Sprintf("Mode %d", len(av.modes)+1)})
 							av.sel = len(av.modes) - 1
@@ -137,50 +138,51 @@ func (av *absenceView) view(c *ui.Context) {
 						}
 					})
 				})
-				ui.Column(c).Grow(1).Gap(6).Children(func() {
+				ui.Column(c).Grow(1).Gap(sp2).Children(func() {
 					if av.sel < 0 || av.sel >= len(av.modes) {
 						return
 					}
 					m := &av.modes[av.sel]
-					ui.Field(c, "Title", func() {
-						ui.TextInput(c, &m.Title).Placeholder("Mode name")
+					auxLabeled(c, "Title", 0, func() {
+						auxInput(c, &m.Title, "Title").Placeholder("Mode name").Grow(1)
 					})
-					ui.Field(c, "Absence message", func() {
-						ui.TextArea(c, &m.Message).Lines(4, 6).Placeholder("Sent back to those who message you")
+					auxLabeled(c, "Message", 0, func() {
+						bpDlgField(c, ui.TextArea(c, &m.Message).Lines(4, 6).Label("Absence message").Placeholder("Sent back to those who message you")).Grow(1)
 					})
 				})
-			})
-			auxGroup(c, "Auto Absence (Experimental)", func() {
-				ui.Checkbox(c, &av.auto, "Switch to [Away] when the desktop is idle")
-				ui.Row(c).Gap(8).PaddingStart(24).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "Idle time (min)").Width(120)
-					ui.NumberInput(c, &av.minutes, 1, 600, 1).Label("Idle time").Width(100).Disabled(!av.auto)
-				})
-			})
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				if av.a.settings.Absent {
-					if bpDlgButton(c, "Not Absent", false).Clicked() {
-						av.status = ""
-						av.setAbsent(false)
-					}
-					ui.Spacer(c)
-				}
-				if bpDlgButton(c, "Set & Absent", true).Clicked() {
-					av.status = ""
-					av.setAbsent(true)
-				}
-				if bpDlgButton(c, "OK", false).Clicked() {
-					av.commit()
-					if av.save() {
-						av.close()
-					}
-				}
-				if bpDlgButton(c, "Cancel", false).Clicked() {
-					av.close()
-				}
 			})
 		})
-		auxStatusBar(c, t, func() { ui.Text(c, av.statusLine()) })
+		bpGroup(c, "Auto Absence (Experimental)", func() {
+			ui.Checkbox(c, &av.auto, "Switch to [Away] when the desktop is idle")
+			bpIndent(c, func() {
+				auxLabeled(c, "Idle time (min)", 120, func() {
+					ui.NumberInput(c, &av.minutes, 1, 600, 1).Label("Idle time").Width(110).Disabled(!av.auto)
+				})
+			})
+		})
+		ui.Spacer(c)
+		ui.Row(c).Gap(sp3).Children(func() {
+			if av.a.settings.Absent {
+				if bpDlgButton(c, "Not Absent", false).Clicked() {
+					av.status = ""
+					av.setAbsent(false)
+				}
+			}
+			ui.Spacer(c)
+			if bpDlgButton(c, "Set & Absent", false).Clicked() {
+				av.status = ""
+				av.setAbsent(true)
+			}
+			if bpDlgButton(c, "OK", true).Clicked() {
+				av.commit()
+				if av.save() {
+					av.close()
+				}
+			}
+			if bpDlgButton(c, "Cancel", false).Clicked() {
+				av.close()
+			}
+		})
 	})
 }
 

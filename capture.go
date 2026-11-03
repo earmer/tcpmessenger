@@ -408,10 +408,6 @@ func (e *capEditor) sizeLabel() string {
 }
 
 var (
-	capFace_   = ui.Hex("#f0f0f0")
-	capBar     = ui.Hex("#c8c8c8")
-	capEdge    = ui.Hex("#7a7a7a")
-	capDesk    = ui.Hex("#808080")
 	capFocus   = ui.Hex("#000000")
 	capTipBack = ui.Hex("#ffffe1")
 )
@@ -434,7 +430,8 @@ func (e *capEditor) view(c *ui.Context) {
 			e.selected = -1
 		}
 	}
-	ui.Column(c).Fill().Background(capFace_).Children(func() {
+	bpApply(c, groundChrome, false)
+	ui.Column(c).Fill().Children(func() {
 		e.toolbar(c)
 		e.canvas(c)
 		e.bottomRow(c)
@@ -442,29 +439,30 @@ func (e *capEditor) view(c *ui.Context) {
 }
 
 func (e *capEditor) toolbar(c *ui.Context) {
-	ui.Row(c).Padding(4, 6).Gap(4).AlignItems(ui.Center).Background(capFace_).BorderWidth(0, 0, 1, 0).BorderColor(capEdge).Children(func() {
+	k := bpOf(c)
+	bpToolbar(c, func() {
 		ui.Toolbar(c, func() {
-			ui.ToggleGroup(c, func() {
+			ui.Row(c).Gap(sp2).Children(func() {
 				for _, t := range capTools {
 					on := e.tool == t.tool
-					if ui.Toggle(c.Key("tool-"+t.label), &on, t.label).Changed() {
+					if bpToggle(c.Key("tool-"+t.label), &on, t.label).Changed() {
 						e.setTool(t.tool)
 					}
 				}
 			})
-			ui.Box(c).Size(1, 20).Background(capEdge)
+			bpSep(c)
 			for i, col := range capColors {
 				sw := ui.ButtonBase(c.Key("color-"+col.name)).Size(18, 18).Background(uiColor(col.rgba)).Label(col.name).Tooltip(col.name)
 				if i == e.color {
-					sw.Border(2, capFocus)
+					bpBevelIn(sw.Border(2, k.focus), k)
 				} else {
-					sw.Border(1, capEdge)
+					sw.Border(1, k.fieldEdge)
 				}
 				if sw.Clicked() {
 					e.color = i
 				}
 			}
-			ui.Box(c).Size(1, 20).Background(capEdge)
+			bpSep(c)
 			if bpButton(c, "Undo").Disabled(!e.doc.canUndo() && !e.commenting).Tooltip("Undo (Cmd+Z)").Clicked() {
 				e.undo()
 			}
@@ -476,7 +474,7 @@ func (e *capEditor) toolbar(c *ui.Context) {
 }
 
 func (e *capEditor) canvas(c *ui.Context) {
-	box := ui.Box(c).Grow(1).FillWidth().Clip().Background(capDesk)
+	box := ui.Box(c).Grow(1).FillWidth().Clip().Background(bpOf(c).desk)
 	if e.tool == toolMove {
 		box.Cursor(ui.CursorMove)
 	} else {
@@ -599,9 +597,11 @@ func paintShape(p *ui.Painter, sh capShape, x0, y0 float32, s float64) {
 }
 
 func (e *capEditor) bottomRow(c *ui.Context) {
-	ui.Row(c).Padding(6, 8).Gap(6).AlignItems(ui.Center).Background(capBar).Children(func() {
-		ui.Text(c, "Tool: "+e.tool.String()).Width(140)
-		ui.Text(c, e.status).TextColor(ui.Hex("#404040")).Grow(1)
+	k := bpOf(c)
+	ui.Row(c).Padding(sp2, sp3).Gap(sp3).AlignItems(ui.Center).Background(k.face).
+		BorderWidth(1, 0, 0, 0).BorderColor(k.cellEdge).Children(func() {
+		ui.Text(c, "Tool: "+e.tool.String()).Width(110).Font(bpMonoFont()).TextColor(k.muted)
+		ui.Text(c, e.status).Font(bpMonoFont()).TextColor(k.muted).Grow(1).MaxLines(1)
 		ui.Select(c.Key("format"), &e.format, []string{"PNG", "JPG"}).Label("Save format").Width(80)
 		if bpButton(c, "Save as...").Clicked() {
 			ext := normFormat(e.format)
@@ -622,7 +622,7 @@ func (e *capEditor) bottomRow(c *ui.Context) {
 				e.status = "Copied to the clipboard"
 			}
 		}
-		if bpBoldButton(c, "Paste to Send").Clicked() {
+		if bpButton(c, "Paste to Send").Clicked() {
 			if att, err := e.attachment(); err != nil {
 				e.status = err.Error()
 			} else if e.onSend != nil {

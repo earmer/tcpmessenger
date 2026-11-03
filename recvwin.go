@@ -217,60 +217,44 @@ func (rw *recvWin) view(c *ui.Context) {
 	t := c.Theme()
 	m := rw.m
 	ui.Column(c).Fill().Children(func() {
-		// Who sent it, and when.
-		bpBevelOut(ui.Column(c).Margin(4, 8, 0, 8).Padding(6, 8).Gap(1).Background(k.face).Border(1, k.fieldEdge), k).
-			Font(bpMonoFont()).Children(func() {
-			ui.Text(c, "Message from...")
-			from := displayName(m.From)
+		// Who sent it.
+		bpToolbar(c, func() {
+			bpChip(c, displayName(m.From)).Selectable()
 			if g := strings.Trim(m.From.Group+"/"+m.From.Host, "/"); g != "" {
-				from += " (" + g + ")"
+				ui.Text(c, g).SingleLine().TextColor(k.muted).Shrink(1)
 			}
-			ui.Text(c, from).TextAlign(ui.Center).Selectable()
-			ui.Text(c, "at "+longTime(m.Time)).TextAlign(ui.Center)
-			var state []string
-			if m.Sealed {
-				if rw.opened {
-					state = append(state, "sealed, opened")
-				} else {
-					state = append(state, "sealed")
-				}
-			}
-			if m.Locked {
-				state = append(state, "locked")
-			}
-			if m.Signed {
-				state = append(state, "signed")
-			}
-			if len(state) > 0 {
-				ui.Text(c, "("+strings.Join(state, ", ")+")").FontSize(12).TextAlign(ui.Center).TextColor(t.TextMuted)
+			ui.Spacer(c)
+			bpSep(c)
+			if bpIconButton(c, iconLog, "Log viewer").Clicked() {
+				openLogViewer(a)
 			}
 		})
 
 		// The message.
-		bpField(c, ui.Column(c).Grow(1).Margin(8)).Children(func() {
+		bpField(c, ui.Column(c).Grow(1).Margin(sp3)).Children(func() {
 			switch {
 			case rw.asking:
-				ui.Column(c).Grow(1).Center().Gap(8).Padding(12).Children(func() {
+				ui.Column(c).Grow(1).Center().Gap(sp3).Padding(sp4).Children(func() {
 					ui.Text(c, "This message is locked. Enter your password.")
-					in := ui.TextInput(c, &rw.password).Password().Label("Password").Placeholder("Password").Width(200).AutoFocus()
+					in := bpField(c, ui.TextInput(c, &rw.password).Password().Label("Password").Placeholder("Password").Width(200).AutoFocus())
 					if rw.wrong {
 						ui.Text(c, "Wrong password").TextColor(k.alertInk)
 					}
-					ui.Row(c).Gap(8).Children(func() {
+					ui.Row(c).Gap(sp3).Children(func() {
+						if bpButton(c, "OK").Clicked() || in.Submitted() {
+							rw.open()
+						}
 						if bpButton(c, "Cancel").Clicked() {
 							rw.asking, rw.wrong, rw.password = false, false, ""
-						}
-						if bpBoldButton(c, "OK").Border(1, k.btnDefEdge).Clicked() || in.Submitted() {
-							rw.open()
 						}
 					})
 				})
 			case !rw.opened:
 				ui.Column(c).Grow(1).Center().Children(func() {
-					if bpButtonBase(c, "Open").MinWidth(200).Height(60).Children(func() {
-						ui.Column(c).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, "Unopened").Bold().FontSize(14)
-							ui.Text(c, "(Click to open)")
+					if bpButtonBase(c, "Open").MinWidth(200).Padding(sp3, sp4).Children(func() {
+						ui.Column(c).AlignItems(ui.Center).Gap(sp1).Children(func() {
+							ui.Text(c, "Unopened").Bold()
+							ui.Text(c, "(Click to open)").FontSize(12).TextColor(k.muted)
 						})
 					}).Clicked() {
 						rw.open()
@@ -278,7 +262,7 @@ func (rw *recvWin) view(c *ui.Context) {
 				})
 			default:
 				ui.Scroll(c).Grow(1).Children(func() {
-					ui.Column(c).Padding(6, 8).Gap(8).Selectable().Children(func() {
+					ui.Column(c).Padding(sp2, sp3).Gap(sp3).Selectable().Children(func() {
 						ui.Text(c, m.Text)
 						for i, at := range m.Attachments {
 							if b := rw.images[i]; b != nil {
@@ -295,33 +279,50 @@ func (rw *recvWin) view(c *ui.Context) {
 						if rw.images[i] != nil {
 							continue
 						}
-						ui.Row(c.Key(-1-i)).Padding(2, 8).Gap(8).Children(func() {
-							ui.Textf(c, "%s (%s)", at.Name, sizeText(at.Size)).SingleLine().Grow(1)
+						ui.Row(c.Key(-1-i)).Padding(sp1, sp3).Gap(sp3).AlignItems(ui.Center).Children(func() {
+							bpChip(c, at.Name).Shrink(1)
+							ui.Text(c, sizeText(at.Size)).SingleLine().TextColor(k.muted).Grow(1)
 							if bpButton(c, "Save…").Label("Save " + at.Name).Clicked() {
 								rw.saveAttachment(i)
 							}
 						})
 					}
 					if rw.status != "" {
-						ui.Text(c, rw.status).FontSize(12).TextColor(t.TextMuted).Padding(2, 8)
+						ui.Text(c, rw.status).FontSize(12).TextColor(t.TextMuted).Padding(sp1, sp3)
 					}
 				})
 			}
 		})
 
 		// The actions.
-		ui.Row(c).Padding(0, 8, 10, 8).Gap(10).AlignItems(ui.Center).Children(func() {
-			if bpIconButton(c, iconLog, "Log viewer").Size(26, 26).Clicked() {
-				openLogViewer(a)
-			}
-			ui.Spacer(c)
-			if bpButton(c, "Close").MinWidth(90).Clicked() {
-				rw.close()
-			}
-			if bpBoldButton(c, "Reply").MinWidth(110).Border(1, k.btnDefEdge).Clicked() {
+		ui.Row(c).Padding(0, sp3, sp3, sp3).Gap(sp3).AlignItems(ui.Center).Children(func() {
+			if bpButton(c, "Reply").Grow(1).Clicked() {
 				rw.reply()
 			}
 			ui.Checkbox(c, &rw.quote, "Quote")
+			if bpButton(c, "Close").Clicked() {
+				rw.close()
+			}
+		})
+
+		bpStatusBar(c, func() {
+			if m.Sealed {
+				if rw.opened {
+					ui.Text(c, "sealed/opened")
+				} else {
+					ui.Text(c, "sealed")
+				}
+			}
+			if m.Locked {
+				ui.Text(c, "locked")
+			}
+			if m.Signed {
+				ui.Text(c, "signed")
+			}
+			if n := len(m.Attachments); n > 0 {
+				ui.Textf(c, "files=%d", n)
+			}
+			ui.Text(c, longTime(m.Time))
 		})
 	})
 	if c.Shortcut(0, ui.KeyEscape) {
