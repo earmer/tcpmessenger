@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // FakeMessenger is an in-memory Messenger for tests and for running the
@@ -183,10 +184,27 @@ func MatchLog(e LogEntry, q LogQuery) bool {
 	return true
 }
 
-// matchText reports whether the lowercased text, note and sender name of e
-// contain the lowercased t.
+// matchText reports whether every space-separated word of t occurs, in any
+// order and ignoring case, in the text, note or sender name of e.
 func matchText(e LogEntry, t string) bool {
-	if ascii(t) && !strings.Contains(t, "\n") {
+	// Walk the words in place: this runs for every entry of the log.
+	for t = strings.TrimLeftFunc(t, unicode.IsSpace); t != ""; {
+		end := strings.IndexFunc(t, unicode.IsSpace)
+		if end < 0 {
+			end = len(t)
+		}
+		if !matchWord(e, t[:end]) {
+			return false
+		}
+		t = strings.TrimLeftFunc(t[end:], unicode.IsSpace)
+	}
+	return true
+}
+
+// matchWord reports whether the word w, which has no spaces, occurs in the
+// text, note or sender name of e.
+func matchWord(e LogEntry, t string) bool {
+	if ascii(t) {
 		// Search the three fields in place instead of building and
 		// lowercasing their concatenation for every entry. A field with
 		// non-ASCII text goes the exact way below.

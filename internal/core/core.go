@@ -180,7 +180,7 @@ type LogEntry struct {
 
 // LogQuery filters the log viewer's list. Zero fields match everything.
 type LogQuery struct {
-	Text    string
+	Text    string // words, all of which must occur, in any order
 	UserID  string
 	Starred bool
 	Marked  bool

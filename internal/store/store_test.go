@@ -321,7 +321,7 @@ func TestQueryLarge(t *testing.T) {
 	}
 	start := time.Now()
 	got, _ := s.Query(core.LogQuery{Text: "message 1999"})
-	if len(got) != 11 { // 1999, 19990..19999
+	if len(got) != 12 { // 1999, 11999, 19990..19999: both words occur
 		t.Fatal(len(got))
 	}
 	t.Logf("query over 20000 entries: %v", time.Since(start))

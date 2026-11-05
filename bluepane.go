@@ -550,25 +550,31 @@ func bpHighlight(c *ui.Context, text, query string, marked bool) []ui.Span {
 	if marked {
 		base = ui.Span{Background: p.mark, Color: p.markInk}
 	}
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
+	words := strings.Fields(strings.ToLower(query))
+	if len(words) == 0 {
 		base.Text = text
 		return []ui.Span{base}
 	}
 	var out []ui.Span
 	lower := strings.ToLower(text)
-	for {
-		i := strings.Index(lower, q)
-		if i < 0 || len(lower) != len(text) {
+	for len(lower) == len(text) {
+		// The earliest hit of any word, the longer one on a tie.
+		at, n := -1, 0
+		for _, w := range words {
+			if i := strings.Index(lower, w); i >= 0 && (at < 0 || i < at || i == at && len(w) > n) {
+				at, n = i, len(w)
+			}
+		}
+		if at < 0 {
 			break
 		}
-		if i > 0 {
+		if at > 0 {
 			s := base
-			s.Text = text[:i]
+			s.Text = text[:at]
 			out = append(out, s)
 		}
-		out = append(out, ui.Span{Text: text[i : i+len(q)], Background: p.hit, Color: p.markInk})
-		text, lower = text[i+len(q):], lower[i+len(q):]
+		out = append(out, ui.Span{Text: text[at : at+n], Background: p.hit, Color: p.markInk})
+		text, lower = text[at+n:], lower[at+n:]
 	}
 	if text != "" {
 		s := base
