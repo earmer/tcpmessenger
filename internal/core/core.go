@@ -23,6 +23,12 @@ type User struct {
 	AbsenceTitle string
 	// Encrypt is true when the peer advertised a public key.
 	Encrypt bool
+	// Fingerprint names the key the peer signs with, as three words
+	// ("Cobalt-Falcon-24"); empty when it advertised none.
+	Fingerprint string
+	// KeyChanged is set by the app when the fingerprint differs from the
+	// one trusted for this ID.
+	KeyChanged bool
 	// LastSeen is when the last presence packet came in.
 	LastSeen time.Time
 }
@@ -55,6 +61,9 @@ type Message struct {
 	// AutoReply marks the absence message sent back automatically; it is
 	// never answered in turn.
 	AutoReply bool
+	// Quiet asks the receiver not to pop the message up: it waits in the
+	// tray, like a sticky note.
+	Quiet bool
 }
 
 // AbsenceMode is one of the absence modes the user defined.
@@ -128,6 +137,9 @@ type Settings struct {
 	StartAtLogin  bool
 	Password      string // asked before opening locked messages, hashed
 	CaptureFormat string // "png" or "jpg"
+
+	// TrustedKeys maps a user ID to the fingerprint first seen for it.
+	TrustedKeys map[string]string
 }
 
 // DefaultSettings returns the settings of a first run.

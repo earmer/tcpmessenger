@@ -24,6 +24,7 @@ type recvWin struct {
 	password string
 	wrong    bool
 	quote    bool
+	pinned   bool   // a compact card that stays on top
 	status   string // the outcome of the last save
 
 	images []*ui.Bitmap // per attachment, nil for files
@@ -33,6 +34,7 @@ type recvWin struct {
 // window or keeps it for later, and tells the user.
 func (a *tcpApp) handleReceived(m core.Message) {
 	m.Incoming = true
+	m.From = a.checkKey(m.From)
 	if a.settings.LogEnabled {
 		if _, err := a.store.Append(m); err != nil {
 			log.Println("log:", err)
@@ -47,6 +49,12 @@ func (a *tcpApp) handleReceived(m core.Message) {
 		if _, err := a.net.Send(core.Message{To: []core.User{m.From}, Text: s.AbsenceModes[s.AbsenceIndex].Message, AutoReply: true}); err != nil {
 			log.Println("absence reply:", err)
 		}
+	}
+	if m.Quiet {
+		// A quiet message waits in the tray: no window, no toast, no sound.
+		a.queued = append(a.queued, m)
+		syncMenus(a)
+		return
 	}
 	if s.PopupOnReceive && !(s.NoPopupWhenAbsent && s.Absent) {
 		openReceiveWindow(a, m)
@@ -108,8 +116,8 @@ func openReceiveWindow(a *tcpApp, m core.Message) *recvWin {
 		Title:     "Receive Message",
 		Width:     420,
 		Height:    380,
-		MinWidth:  320,
-		MinHeight: 260,
+		MinWidth:  220,
+		MinHeight: 120,
 		Content:   ui.View(rw.view),
 	})
 	a.recvWins = append(a.recvWins, rw)
@@ -130,6 +138,21 @@ func (rw *recvWin) onClosed() {
 		}
 	}
 	syncMenus(a)
+}
+
+// togglePin turns the window into a compact card on top of the others, or
+// back into the full window.
+func (rw *recvWin) togglePin() {
+	rw.pinned = !rw.pinned
+	if rw.win == nil {
+		return
+	}
+	rw.win.SetAlwaysOnTop(rw.pinned)
+	if rw.pinned {
+		rw.win.SetContentSize(300, 190)
+	} else {
+		rw.win.SetContentSize(420, 380)
+	}
 }
 
 func (rw *recvWin) close() {
@@ -223,12 +246,34 @@ func (rw *recvWin) view(c *ui.Context) {
 			if g := strings.Trim(m.From.Group+"/"+m.From.Host, "/"); g != "" {
 				ui.Text(c, g).SingleLine().TextColor(k.muted).Shrink(1)
 			}
+			if m.From.Fingerprint != "" && !rw.pinned {
+				bpIdenticon(c, m.From.Fingerprint, k)
+				ui.Text(c, m.From.Fingerprint).FontSize(12).SingleLine().Font(bpMonoFont()).TextColor(k.muted).Shrink(1)
+			}
 			ui.Spacer(c)
-			bpSep(c)
-			if bpIconButton(c, iconLog, "Log viewer").Clicked() {
-				openLogViewer(a)
+			pin := rw.pinned
+			if bpToggle(c, &pin, "Pin").Tooltip("Keep this message on top as a small card").Changed() {
+				rw.togglePin()
+			}
+			if !rw.pinned {
+				bpSep(c)
+				if bpIconButton(c, iconLog, "Log viewer").Clicked() {
+					openLogViewer(a)
+				}
 			}
 		})
+
+		// A sender whose key is not the one trusted for it.
+		if m.From.KeyChanged && !rw.pinned {
+			ui.Row(c).Margin(sp3, sp3, 0, sp3).Gap(sp3).AlignItems(ui.Center).Padding(sp2, sp3).
+				Background(k.note).Border(1, k.alert).Children(func() {
+				ui.Textf(c, "Identity key changed: %s now signs as %s. It may not be the same person.",
+					displayName(m.From), m.From.Fingerprint).Wrap().Grow(1).TextColor(k.alertInk)
+				if bpButton(c, "Trust new key").Clicked() {
+					a.trustKey(m.From)
+				}
+			})
+		}
 
 		// The message.
 		bpField(c, ui.Column(c).Grow(1).Margin(sp3)).Children(func() {
@@ -293,6 +338,16 @@ func (rw *recvWin) view(c *ui.Context) {
 				})
 			}
 		})
+
+		if rw.pinned {
+			// The card keeps the message in view as a to-do: ticking it
+			// off closes it into the log.
+			done := false
+			if ui.Checkbox(c, &done, "Done").Changed() && done {
+				rw.close()
+			}
+			return
+		}
 
 		// The actions.
 		ui.Row(c).Padding(0, sp3, sp3, sp3).Gap(sp3).AlignItems(ui.Center).Children(func() {

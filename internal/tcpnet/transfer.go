@@ -54,6 +54,7 @@ type wireMsg struct {
 	Attachments []core.Attachment `json:"att,omitempty"`
 	Time        time.Time         `json:"time"`
 	AutoReply   bool              `json:"auto,omitempty"`
+	Quiet       bool              `json:"quiet,omitempty"`
 }
 
 func toWire(u core.User, port int) wireUser {
@@ -115,7 +116,7 @@ func (m *Messenger) Send(msg core.Message) (string, error) {
 	w := wireMsg{
 		ID: msg.ID, From: toWire(m.self, m.settings.Port), Text: msg.Text,
 		Sealed: msg.Sealed, Locked: msg.Locked, Attachments: msg.Attachments, Time: msg.Time,
-		AutoReply: msg.AutoReply,
+		AutoReply: msg.AutoReply, Quiet: msg.Quiet,
 	}
 	for _, u := range msg.To {
 		w.To = append(w.To, toWire(u, 0))
@@ -373,7 +374,10 @@ func (m *Messenger) receive(f *frame, remote net.Addr) error {
 	msg := core.Message{
 		ID: w.ID, From: from, Text: w.Text, Sealed: w.Sealed, Locked: w.Locked,
 		Attachments: w.Attachments, Time: w.Time, Incoming: true, Signed: signed,
-		AutoReply: w.AutoReply,
+		AutoReply: w.AutoReply, Quiet: w.Quiet,
+	}
+	if len(signKey) == 32 {
+		msg.From.Fingerprint = core.Fingerprint(signKey)
 	}
 	for _, u := range w.To {
 		if u.ID == self.ID {

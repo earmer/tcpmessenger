@@ -246,6 +246,24 @@ func TestSealedOpened(t *testing.T) {
 	}
 }
 
+func TestQuietAndFingerprintOnWire(t *testing.T) {
+	nodes := startNodes(t, 2, nil)
+	waitPeers(t, nodes, 1)
+	a, b := nodes[0], nodes[1]
+	if _, err := a.m.Send(core.Message{To: a.m.Peers(), Text: "psst", Quiet: true}); err != nil {
+		t.Fatal(err)
+	}
+	b.rec.wait(t, "receive", func() bool { return len(b.rec.received) == 1 })
+	got := b.rec.received[0]
+	if !got.Quiet {
+		t.Error("quiet flag lost")
+	}
+	pa, _ := peerByID(b.m.Peers(), "user0@test")
+	if pa.Fingerprint == "" || got.From.Fingerprint != pa.Fingerprint {
+		t.Errorf("fingerprints: peer %q, message %q", pa.Fingerprint, got.From.Fingerprint)
+	}
+}
+
 func TestAbsenceChange(t *testing.T) {
 	nodes := startNodes(t, 2, nil)
 	waitPeers(t, nodes, 1)

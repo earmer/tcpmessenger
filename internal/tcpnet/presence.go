@@ -204,6 +204,9 @@ func (m *Messenger) upsertLocked(p packet, src *net.UDPAddr) {
 		Encrypt:  len(p.EncKey) == 32 && len(p.SignKey) == 32,
 		LastSeen: time.Now(),
 	}
+	if len(p.SignKey) == 32 {
+		u.Fingerprint = core.Fingerprint(p.SignKey)
+	}
 	if u.Name == "" {
 		u.Name = u.Logon
 	}

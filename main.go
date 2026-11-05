@@ -93,7 +93,7 @@ func newAppWith(net core.Messenger, st core.Store) *tcpApp {
 func startMessenger(a *tcpApp) error {
 	err := a.net.Start(a.settings, core.Events{
 		PeersChanged: func(users []core.User) {
-			a.desk.post(func() { a.peers = users })
+			a.desk.post(func() { a.peers = a.checkKeys(users) })
 		},
 		Received: func(m core.Message) {
 			a.desk.post(func() { a.handleReceived(m) })
@@ -108,7 +108,7 @@ func startMessenger(a *tcpApp) error {
 	if err != nil {
 		return err
 	}
-	a.peers = a.net.Peers()
+	a.peers = a.checkKeys(a.net.Peers())
 	return nil
 }
 

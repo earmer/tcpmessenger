@@ -34,6 +34,7 @@ type sendWin struct {
 	text   string
 	seal   bool
 	lock   bool
+	quiet  bool
 	attach []core.Attachment
 
 	// A failed delivery, offered for a retry.
@@ -441,6 +442,7 @@ func (sw *sendWin) view(c *ui.Context) {
 			if ui.Checkbox(c, &sw.seal, "Seal").Changed() && !sw.seal {
 				sw.lock = false
 			}
+			ui.Checkbox(c, &sw.quiet, "Quiet").Tooltip("No pop-up for the receiver: the message waits in their tray")
 			if ui.Checkbox(c, &sw.lock, "Lock").Tooltip("The receiver enters a password to open it").Changed() && sw.lock {
 				sw.seal = true
 			}
@@ -451,6 +453,14 @@ func (sw *sendWin) view(c *ui.Context) {
 			ui.Textf(c, "sel=%d", len(selected))
 			ui.Textf(c, "total=%d", len(all))
 			ui.Textf(c, "port=%d", a.settings.Port)
+			for _, u := range selected {
+				if u.KeyChanged {
+					ui.Textf(c, "key changed: %s", displayName(u)).TextColor(bpOf(c).alertInk)
+				}
+			}
+			if len(selected) == 1 && selected[0].Fingerprint != "" && !selected[0].KeyChanged {
+				ui.Textf(c, "key=%s", selected[0].Fingerprint)
+			}
 		})
 	})
 
@@ -538,6 +548,7 @@ func (sw *sendWin) send() bool {
 	m := core.Message{
 		To:          to,
 		Text:        sw.text,
+		Quiet:       sw.quiet,
 		Sealed:      sw.seal || sw.lock,
 		Locked:      sw.lock,
 		Attachments: sw.attach,
