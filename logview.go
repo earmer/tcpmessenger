@@ -144,19 +144,27 @@ func (lv *logViewer) refresh() {
 	if lv.user != lvAllUsers {
 		q.UserID = lv.userIDs[lv.user]
 	}
-	got, err := lv.a.store.Query(q)
-	if err != nil {
-		lv.status = "Error: " + err.Error()
-		return
-	}
-	out := got[:0:0]
-	for _, e := range got {
-		if lv.withImages && !lvHasAttachment(e, true) || lv.withFiles && !lvHasAttachment(e, false) {
-			continue
+	got := all
+	if q.Text != "" || q.Starred || q.Marked || q.UserID != "" {
+		got, err = lv.a.store.Query(q)
+		if err != nil {
+			lv.status = "Error: " + err.Error()
+			return
 		}
-		out = append(out, e)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq > out[j].Seq })
+	out := got
+	if lv.withImages || lv.withFiles {
+		out = got[:0:0]
+		for _, e := range got {
+			if lv.withImages && !lvHasAttachment(e, true) || lv.withFiles && !lvHasAttachment(e, false) {
+				continue
+			}
+			out = append(out, e)
+		}
+	}
+	if !sort.SliceIsSorted(out, func(i, j int) bool { return out[i].Seq > out[j].Seq }) {
+		sort.SliceStable(out, func(i, j int) bool { return out[i].Seq > out[j].Seq })
+	}
 
 	var keep int64 = -1
 	if cur, ok := lv.current(); ok {
