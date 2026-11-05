@@ -1,6 +1,7 @@
 package tcpnet
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -62,17 +63,22 @@ func toWire(u core.User, port int) wireUser {
 }
 
 func writeFrame(w io.Writer, f *frame) error {
-	b, err := json.Marshal(f)
-	if err != nil {
+	// Encode behind a reserved length prefix so that the frame is built
+	// in one buffer and goes out in one write.
+	var buf bytes.Buffer
+	buf.Write([]byte{0, 0, 0, 0})
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(f); err != nil {
 		return err
 	}
-	if len(b) > maxFrame {
+	b := buf.Bytes()
+	b = b[:len(b)-1] // Encode ends the value with a newline
+	if len(b)-4 > maxFrame {
 		return errors.New("tcpnet: message too large")
 	}
-	buf := make([]byte, 4+len(b))
-	binary.BigEndian.PutUint32(buf, uint32(len(b)))
-	copy(buf[4:], b)
-	_, err = w.Write(buf)
+	binary.BigEndian.PutUint32(b, uint32(len(b)-4))
+	_, err := w.Write(b)
 	return err
 }
 
