@@ -606,20 +606,20 @@ func (s *Store) Query(q core.LogQuery) ([]core.LogEntry, error) {
 	}
 	out := make([]core.LogEntry, len(hits))
 	for i, e := range hits {
-		out[i] = s.export(e)
+		out[i] = s.export(e, !q.NoData)
 	}
 	s.mu.RUnlock()
 	return out, nil
 }
 
-// export copies e for a caller, reading saved images.
-func (s *Store) export(e *entry) core.LogEntry {
+// export copies e for a caller, reading saved images when withData is set.
+func (s *Store) export(e *entry, withData bool) core.LogEntry {
 	le := e.LogEntry
 	le.To = append([]core.User(nil), e.To...)
 	if len(e.Attachments) > 0 {
 		le.Attachments = append([]core.Attachment(nil), e.Attachments...)
 		for i, p := range e.paths {
-			if p != "" {
+			if withData && p != "" {
 				if data, err := os.ReadFile(filepath.Join(s.dir, p)); err == nil {
 					le.Attachments[i].Data = data
 				}
@@ -627,6 +627,20 @@ func (s *Store) export(e *entry) core.LogEntry {
 		}
 	}
 	return le
+}
+
+// Image returns the content of the saved image attachment i of entry seq,
+// or nil when it has none or the file cannot be read.
+func (s *Store) Image(seq int64, i int) []byte {
+	p := s.ImagePath(seq, i)
+	if p == "" {
+		return nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // ImagePath returns the file an image attachment of entry seq was saved

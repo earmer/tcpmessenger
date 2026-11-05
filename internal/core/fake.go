@@ -177,12 +177,71 @@ func MatchLog(e LogEntry, q LogQuery) bool {
 	if !q.Since.IsZero() && e.Time.Before(q.Since) || !q.Until.IsZero() && e.Time.After(q.Until) {
 		return false
 	}
-	if q.Text != "" {
-		t := strings.ToLower(q.Text)
-		hay := strings.ToLower(e.Text + "\n" + e.Note + "\n" + e.From.Name)
-		if !strings.Contains(hay, t) {
+	if q.Text != "" && !matchText(e, q.Text) {
+		return false
+	}
+	return true
+}
+
+// matchText reports whether the lowercased text, note and sender name of e
+// contain the lowercased t.
+func matchText(e LogEntry, t string) bool {
+	if ascii(t) && !strings.Contains(t, "\n") {
+		// Search the three fields in place instead of building and
+		// lowercasing their concatenation for every entry. A field with
+		// non-ASCII text goes the exact way below.
+		lt := strings.ToLower(t)
+		found, exact := false, true
+		for _, f := range [...]string{e.Text, e.Note, e.From.Name} {
+			if !ascii(f) {
+				exact = false
+				break
+			}
+			found = found || containsFoldASCII(f, lt)
+		}
+		if exact {
+			return found
+		}
+	}
+	t = strings.ToLower(t)
+	return strings.Contains(strings.ToLower(e.Text+"\n"+e.Note+"\n"+e.From.Name), t)
+}
+
+func ascii(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
 			return false
 		}
 	}
 	return true
+}
+
+// containsFoldASCII reports whether the ASCII string s contains lt, an
+// ASCII string already in lower case, ignoring the case of s.
+func containsFoldASCII(s, lt string) bool {
+	n := len(lt)
+	if n == 0 {
+		return true
+	}
+	c0 := lt[0]
+	for i := 0; i+n <= len(s); i++ {
+		if lower(s[i]) != c0 {
+			continue
+		}
+		j := 1
+		for j < n && lower(s[i+j]) == lt[j] {
+			j++
+		}
+		if j == n {
+			return true
+		}
+	}
+	return false
+}
+
+func lower(c byte) byte {
+	if 'A' <= c && c <= 'Z' {
+		return c + 'a' - 'A'
+	}
+	return c
 }

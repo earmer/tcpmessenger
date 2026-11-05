@@ -132,7 +132,7 @@ func (lv *logViewer) refresh() {
 	if lv.a == nil || lv.a.store == nil {
 		return
 	}
-	all, err := lv.a.store.Query(core.LogQuery{})
+	all, err := lv.a.store.Query(core.LogQuery{NoData: true})
 	if err != nil {
 		lv.status = "Error: " + err.Error()
 		return
@@ -140,7 +140,7 @@ func (lv *logViewer) refresh() {
 	lv.total = len(all)
 	lv.collectUsers(all)
 
-	q := core.LogQuery{Text: strings.TrimSpace(lv.query), Starred: lv.starred, Marked: lv.marked}
+	q := core.LogQuery{Text: strings.TrimSpace(lv.query), Starred: lv.starred, Marked: lv.marked, NoData: true}
 	if lv.user != lvAllUsers {
 		q.UserID = lv.userIDs[lv.user]
 	}
@@ -376,7 +376,13 @@ func (lv *logViewer) bitmap(e core.LogEntry, i int) *ui.Bitmap {
 	if b, ok := lv.bitmaps[key]; ok {
 		return b
 	}
-	b, err := ui.DecodeBitmap(e.Attachments[i].Data)
+	data := e.Attachments[i].Data
+	if len(data) == 0 {
+		if l, ok := lv.a.store.(core.ImageLoader); ok {
+			data = l.Image(e.Seq, i)
+		}
+	}
+	b, err := ui.DecodeBitmap(data)
 	if err != nil {
 		b = nil
 	}
@@ -582,7 +588,7 @@ func (lv *logViewer) detailPane(c *ui.Context, t *ui.Theme) {
 			ui.Column(c).Padding(sp3).Gap(sp3).Children(func() {
 				ui.RichText(c, bpHighlight(c, e.Text, lv.query, e.Marked)...).Selectable().Wrap()
 				for ai, at := range e.Attachments {
-					if at.IsImage && len(at.Data) > 0 {
+					if at.IsImage {
 						if b := lv.bitmap(e, ai); b != nil {
 							ui.Image(c, b).MaxWidth(480).MaxHeight(360).Fit(ui.Contain).Label(at.Name)
 							continue

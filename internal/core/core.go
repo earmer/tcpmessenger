@@ -186,6 +186,16 @@ type LogQuery struct {
 	Marked  bool
 	Since   time.Time
 	Until   time.Time
+	// NoData leaves out the content of images the store keeps in files;
+	// fetch one with ImageLoader when it is needed.
+	NoData bool
+}
+
+// ImageLoader is implemented by stores that keep image attachments in
+// files: Image returns the content of attachment i of entry seq, or nil
+// when there is none.
+type ImageLoader interface {
+	Image(seq int64, i int) []byte
 }
 
 // Events are what the network layer reports. Callbacks run on the network
