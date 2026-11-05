@@ -203,5 +203,5 @@ func appVersion() string {
 			return v
 		}
 	}
-	return "0.1.0"
+	return "0.2.0"
 }
