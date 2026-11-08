@@ -1,6 +1,9 @@
 package main
 
 import (
+	_ "embed"
+	"encoding/json"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -196,12 +199,27 @@ func helpTable(c *ui.Context, p *bpPalette) {
 	})
 }
 
-// appVersion is the app's version, or that of mygo.json in tests.
+//go:embed mygo.json
+var mygoJSON []byte
+
+// bundledVersion is the version from mygo.json, the single source of
+// truth; mygo.App.Version() reports the same value when packaged.
+var bundledVersion = func() string {
+	var cfg struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(mygoJSON, &cfg); err == nil {
+		return cfg.Version
+	}
+	return ""
+}()
+
+// appVersion is the app's version, preferring the packaged value.
 func appVersion() string {
 	if nativeWindows() {
 		if v := mygo.App.Version(); v != "" {
 			return v
 		}
 	}
-	return "0.2.0"
+	return bundledVersion
 }

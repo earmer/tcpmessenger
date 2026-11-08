@@ -56,7 +56,7 @@ func showAbout() {
 	go mygo.Dialog.Message(mygo.MessageOptions{
 		Type:    mygo.MessageInfo,
 		Title:   "About " + appName,
-		Message: appName + " " + mygo.App.Version(),
+		Message: appName + " " + appVersion(),
 		Detail:  "A LAN messenger after IP Messenger.",
 		Buttons: []string{"OK"},
 	})
