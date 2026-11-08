@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 )
 
 func open(t *testing.T, dir string) *Store {

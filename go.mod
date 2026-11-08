@@ -1,4 +1,4 @@
-module my-app
+module tcpmessenger
 
 go 1.27.3
 

@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 )
 
 // ErrPortInUse is wrapped by Start's error when the port is taken.

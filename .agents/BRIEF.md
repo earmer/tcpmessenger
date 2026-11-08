@@ -3,7 +3,7 @@
 We are building **TCP Messenger**, a working LAN messenger modelled on IP Messenger
 (rebranded: "TCP Messenger" / "TCPMsg"). It is a mygo **native UI** app (Go only,
 package `github.com/egoist/mygo/ui`, no webview) at
-`/Users/earmercarey/tcpmessenger/my-app` (module name `my-app`, mygo v0.7.4, Go 1.27).
+`/Users/earmercarey/tcpmessenger/my-app` (module name `tcpmessenger`, mygo v0.7.4, Go 1.27).
 
 ## References
 - mygo docs (cloned): `/private/tmp/claude-501/-Users-earmercarey-tcpmessenger/a127bc5f-17ae-4220-87d7-6f3a20c47508/scratchpad/mygo-src/docs/`
@@ -28,8 +28,8 @@ package `github.com/egoist/mygo/ui`, no webview) at
   `openAbsence(a *tcpApp)` absence.go, `openSortDisplay(a *tcpApp)` sortdisplay.go,
   `openCapture(a *tcpApp, done func(core.Attachment))` capture.go. They are stubs now; their owner replaces them.
 - Real backends (being written in parallel):
-  `my-app/internal/tcpnet`: `func New() core.Messenger`;
-  `my-app/internal/store`: `func DefaultDir() string`, `func Open(dir string) (core.Store, error)`.
+  `tcpmessenger/internal/tcpnet`: `func New() core.Messenger`;
+  `tcpmessenger/internal/store`: `func DefaultDir() string`, `func Open(dir string) (core.Store, error)`.
 
 ## Rules
 - Several agents edit this module at the same time. **Only create/edit the files you own.** If the

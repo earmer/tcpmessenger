@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 )
 
 // freePort finds a port free for both TCP and UDP on loopback.

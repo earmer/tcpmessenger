@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 )
 
 const (

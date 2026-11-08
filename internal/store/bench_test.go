@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 )
 
 func benchMsg(i int, imgs bool) core.Message {

@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	"my-app/internal/core"
-	"my-app/internal/store"
-	"my-app/internal/tcpnet"
+	"tcpmessenger/internal/core"
+	"tcpmessenger/internal/store"
+	"tcpmessenger/internal/tcpnet"
 )
 
 // openBackends returns the network layer and the store the app runs on:

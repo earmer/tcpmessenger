@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 )
 
 // testNet is the fake messenger with failing deliveries and a record of

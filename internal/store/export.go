@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 )
 
 const (

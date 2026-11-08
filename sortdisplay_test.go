@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 
 	"github.com/egoist/mygo/ui"
 )

@@ -6,7 +6,7 @@ import (
 	"os/user"
 	"time"
 
-	"my-app/internal/core"
+	"tcpmessenger/internal/core"
 
 	"github.com/egoist/mygo"
 )

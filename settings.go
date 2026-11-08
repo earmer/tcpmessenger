@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"my-app/internal/core"
-	"my-app/internal/store"
+	"tcpmessenger/internal/core"
+	"tcpmessenger/internal/store"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
